@@ -1,5 +1,6 @@
 #include "mpu6050_drv.h"
 #include "esp_log.h"
+#include <math.h>
 
 static const char *TAG = "mpu6050_drv";
 static mpu6050_dev_t dev;
@@ -31,4 +32,10 @@ esp_err_t mpu6050_drv_read(mpu6050_acceleration_t *accel,
     ESP_LOGE(TAG, "Read failed: %s", esp_err_to_name(ret));
   }
   return ret;
+}
+
+float calc_tilt(const mpu6050_acceleration_t *accel) {
+  float magnitude =
+      sqrtf(accel->x * accel->x + accel->y * accel->y + accel->z * accel->z);
+  return acosf(accel->z / magnitude) * 180.0f / M_PI;
 }

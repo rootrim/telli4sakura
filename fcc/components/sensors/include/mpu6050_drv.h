@@ -21,3 +21,12 @@ esp_err_t mpu6050_drv_init(int sda_gpio, int scl_gpio);
  */
 esp_err_t mpu6050_drv_read(mpu6050_acceleration_t *accel,
                            mpu6050_rotation_t *gyro);
+
+/**
+ * @brief Turns acceleration value to tilt value
+ *
+ * @param[in] accel mpu6050_acceleration_t value
+ * @return float tilt value
+ *
+ */
+float calc_tilt(const mpu6050_acceleration_t *accel);

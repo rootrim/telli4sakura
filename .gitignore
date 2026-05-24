@@ -1,4 +1,5 @@
 .cache/
+target/
 build/
 sdkconfig
 sdkconfig.old

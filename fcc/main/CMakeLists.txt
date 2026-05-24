@@ -5,4 +5,5 @@ idf_component_register(
         sensors
         filters
         flight_state
+        lora
 )

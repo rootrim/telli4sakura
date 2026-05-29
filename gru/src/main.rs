@@ -46,13 +46,11 @@ fn main() -> io::Result<()> {
         let mut buf = [0u8; PACKET_SIZE];
         while running_clone.load(Ordering::Relaxed) {
             if let Err(e) = sync_to_header(&mut port) {
-                eprintln!("Sync error: {e}");
                 continue;
             }
 
             buf[0] = HEADER;
             if let Err(e) = read_exact(&mut port, &mut buf[1..]) {
-                eprintln!("Read error: {e}");
                 continue;
             }
 
@@ -65,7 +63,7 @@ fn main() -> io::Result<()> {
                     }
                     *last_packet_clone.lock().unwrap() = Some(pkt);
                 }
-                Err(e) => eprintln!("Parse error: {e:?}"),
+                Err(e) => continue,
             }
         }
     });

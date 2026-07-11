@@ -2,6 +2,7 @@
 #include <bmp390_drv.h>
 #include <gps_drv.h>
 #include <kalman.h>
+#include <lora.h>
 #include <mpu6050_drv.h>
 #include <ms5611_drv.h>
 #include <weighted_average.h>
@@ -22,8 +23,8 @@ static const char *TAG = "fcc";
 #define PIN_I2C_SCL 6
 #define PIN_GPS_TX 17
 #define PIN_GPS_RX 18
-#define PIN_LORA_TX 19
-#define PIN_LORA_RX 20
+#define PIN_LORA_TX 7
+#define PIN_LORA_RX 8
 #define PIN_LED_APOGEE 10
 
 #define I2C_PORT I2C_NUM_0
@@ -51,6 +52,7 @@ static void sensors_init(void) {
   ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
   ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
   ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
+  ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
 }
 
 static void kalman_init_all(void) {
@@ -130,7 +132,19 @@ void app_main(void) {
         ESP_LOGI(TAG, "APOGEE DETECTED");
       }
 
-      // TODO: pack into 44-byte packet and send via LoRa
+      lora_packet_data_t pkt = {
+          .altitude = altitude,
+          .pressure = pressure,
+          .accel_x = ax,
+          .accel_y = ay,
+          .accel_z = az,
+          .angle_x = gx,
+          .angle_y = gy,
+          .angle_z = gz,
+          .gps_lat = lat,
+          .gps_lon = lon,
+      };
+      lora_send(&pkt);
     }
 
   next:

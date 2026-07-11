@@ -1,10 +1,11 @@
 [package]
 name = "gru"
 version = "0.1.0"
+edition = "2024"
 description = "A serial port reader and visualizer for Telli IV: Sakura's telemetries"
 authors = ["trim <omuaz01@gmail.com>"]
-license = "MIT"
-edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/rootrim/telli4sakura"
 
 [dependencies]
 ratatui = { version = "0.30.0", features = ["crossterm"] }

@@ -12,8 +12,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "i2cdev.h"
 #include <math.h>
-#include <stdio.h>
 
 static const char *TAG = "fcc";
 
@@ -43,25 +43,13 @@ static kalman_t k_gyro_x;
 static kalman_t k_gyro_y;
 static kalman_t k_gyro_z;
 
-// I2C master bus handle — shared between BMP390 and future sensors
-static i2c_master_bus_handle_t i2c_bus;
-
-static void i2c_init(void) {
-  i2c_master_bus_config_t cfg = {
-      .i2c_port = I2C_PORT,
-      .sda_io_num = PIN_I2C_SDA,
-      .scl_io_num = PIN_I2C_SCL,
-      .clk_source = I2C_CLK_SRC_DEFAULT,
-      .glitch_ignore_cnt = 7,
-      .flags.enable_internal_pullup = true,
-  };
-  ESP_ERROR_CHECK(i2c_new_master_bus(&cfg, &i2c_bus));
-}
-
 static void sensors_init(void) {
+  ESP_ERROR_CHECK(i2cdev_init());
   ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
   ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+  i2c_master_bus_handle_t i2c_bus;
+  ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
+  ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
   ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
 }
 
@@ -79,13 +67,12 @@ static void kalman_init_all(void) {
 
 void app_main(void) {
 
-  ////////////////////7777
+  ////////////////////////
   gpio_reset_pin(PIN_LED_APOGEE);
   gpio_set_direction(PIN_LED_APOGEE, GPIO_MODE_OUTPUT);
   gpio_set_level(PIN_LED_APOGEE, 0);
   ////////////////////////
 
-  i2c_init();
   sensors_init();
   kalman_init_all();
 

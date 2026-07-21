@@ -48,10 +48,10 @@ static void sensors_init(void) {
   ESP_ERROR_CHECK(i2cdev_init());
   ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
   ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  i2c_master_bus_handle_t i2c_bus;
-  ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
-  ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
-  ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
+  // i2c_master_bus_handle_t i2c_bus;
+  // ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
+  // ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
+  // ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
   ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
 }
 
@@ -86,17 +86,17 @@ void app_main(void) {
     // --- Read sensors ---
     int32_t ms5611_pressure;
     float ms5611_temp;
-    float bmp390_pressure, bmp390_temp;
+    // float bmp390_pressure, bmp390_temp;
     mpu6050_acceleration_t accel;
     mpu6050_rotation_t gyro;
-    gps_data_t gps;
+    // gps_data_t gps;
 
     esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
-    esp_err_t r_bmp = bmp390_drv_read(&bmp390_pressure, &bmp390_temp);
+    // esp_err_t r_bmp = bmp390_drv_read(&bmp390_pressure, &bmp390_temp);
     esp_err_t r_mpu = mpu6050_drv_read(&accel, &gyro);
-    esp_err_t r_gps = gps_drv_read(&gps);
+    // esp_err_t r_gps = gps_drv_read(&gps);
 
-    if (r_ms != ESP_OK || r_bmp != ESP_OK || r_mpu != ESP_OK) {
+    if (r_ms != ESP_OK /* || r_bmp != ESP_OK */ || r_mpu != ESP_OK) {
       ESP_LOGE(TAG, "Sensor read error");
       goto next;
     }
@@ -105,7 +105,8 @@ void app_main(void) {
       // --- Weighted average: pressure (50/50 for now) ---
       // TODO: tune weights based on sensor accuracy tests
       float raw_pressure =
-          weighted_average((float)ms5611_pressure, 0.5f, bmp390_pressure, 0.5f);
+          weighted_average((float)ms5611_pressure, 0.5f,
+                           (float)ms5611_pressure /* bmp390_pressure */, 0.5f);
 
       // --- Kalman filter ---
       float pressure = kalman_update(&k_pressure, raw_pressure);
@@ -119,8 +120,10 @@ void app_main(void) {
       float gy = kalman_update(&k_gyro_y, gyro.y);
       float gz = kalman_update(&k_gyro_z, gyro.z);
 
-      float lat = (r_gps == ESP_OK) ? gps.latitude : 0.0f;
-      float lon = (r_gps == ESP_OK) ? gps.longitude : 0.0f;
+      // float lat = (r_gps == ESP_OK) ? gps.latitude : 0.0f;
+      // float lon = (r_gps == ESP_OK) ? gps.longitude : 0.0f;
+      float lat = 0.0f;
+      float lon = 0.0f;
 
       ESP_LOGI(TAG,
                "alt=%.2f press=%.2f ax=%.3f ay=%.3f az=%.3f "

@@ -1,6 +1,7 @@
 .cache/
 target/
 build/
+result
 sdkconfig
 sdkconfig.old
 dependencies.lock

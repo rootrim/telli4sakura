@@ -59,14 +59,14 @@ static void sensors_init(void) {
 static void kalman_init_all(void) {
   // q: process noise, r: measurement noise
   // TODO: tune these values after testing
-  kalman_init(&k_pressure_ms, 0.1f, 1.0f, 0.0f);
-  kalman_init(&k_pressure_bmp, 0.1f, 1.0f, 0.0f);
-  kalman_init(&k_accel_x, 0.1f, 0.5f, 0.0f);
-  kalman_init(&k_accel_y, 0.1f, 0.5f, 0.0f);
-  kalman_init(&k_accel_z, 0.1f, 0.5f, 9.81f);
-  kalman_init(&k_gyro_x, 0.1f, 0.5f, 0.0f);
-  kalman_init(&k_gyro_y, 0.1f, 0.5f, 0.0f);
-  kalman_init(&k_gyro_z, 0.1f, 0.5f, 0.0f);
+  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 0.0f);
+  kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 0.0f);
+  kalman_init(&k_accel_x, 0.05f, 0.0000769f, 0.0f);
+  kalman_init(&k_accel_y, 0.05f, 0.0000769f, 0.0f);
+  kalman_init(&k_accel_z, 0.05f, 0.0000769f, 9.81f);
+  kalman_init(&k_gyro_x, 0.02f, 0.000125f, 0.0f);
+  kalman_init(&k_gyro_y, 0.02f, 0.000125f, 0.0f);
+  kalman_init(&k_gyro_z, 0.02f, 0.000125f, 0.0f);
 }
 
 void app_main(void) {

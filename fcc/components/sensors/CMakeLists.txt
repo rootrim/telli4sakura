@@ -4,6 +4,7 @@ idf_component_register(
         "bmp390_drv.c"
         "mpu6050_drv.c"
         "gps_drv.c"
+        "max3232_drv.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -11,6 +12,8 @@ idf_component_register(
         k0i05__esp_bmp390
         esp-idf-lib__mpu6050
         minmea
+        filters
+        flight_state
         esp_driver_uart
 )
  

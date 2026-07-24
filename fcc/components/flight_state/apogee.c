@@ -16,28 +16,23 @@ void flight_state_init(void) {
 }
 
 bool flight_state_update(float altitude_m, float tilt_deg) {
-  // Once apogee fires, never fire again
   if (s_apogee_fired)
     return false;
 
-  // Altitude lock check
   if (!s_altitude_lock && altitude_m >= APOGEE_MIN_ALTITUDE_M) {
     s_altitude_lock = true;
   }
   if (!s_altitude_lock)
     return false;
 
-  // Fill sliding window
   s_alt_window[s_window_idx] = altitude_m;
   s_window_idx = (s_window_idx + 1) % APOGEE_WINDOW;
   if (s_window_count < APOGEE_WINDOW)
     s_window_count++;
 
-  // Need full window before deciding
   if (s_window_count < APOGEE_WINDOW)
     return false;
 
-  // Check if all samples in window are descending
   bool descending = true;
   for (int i = 0; i < APOGEE_WINDOW - 1; i++) {
     int curr = (s_window_idx + i) % APOGEE_WINDOW;
@@ -48,7 +43,6 @@ bool flight_state_update(float altitude_m, float tilt_deg) {
     }
   }
 
-  // Tilt check
   bool tilted = (tilt_deg >= APOGEE_TILT_THRESHOLD);
 
   if (descending && tilted) {

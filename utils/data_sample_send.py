@@ -1,13 +1,11 @@
 #! /usr/bin/env nix-shell
 #! nix-shell -i python3 --packages python3
 """
-GRU test scripti — lora_send()'in ürettiği 44 byte'lık paketi
-socat ile açılan sanal seri porta (örn. /tmp/ttyV1) yazar.
-
-Kullanım:
+GRU Test Script
+Usage:
   1) socat -d -d pty,raw,echo=0,link=/tmp/ttyV0 pty,raw,echo=0,link=/tmp/ttyV1
-  2) GRU'yu /tmp/ttyV0'ı dinleyecek şekilde çalıştır
-  3) python3 lora_test_send.py
+  2) run gru in a way that allows it to listen /tmp/ttyV0
+  3) ./lora_test_send.py
 """
 
 import struct

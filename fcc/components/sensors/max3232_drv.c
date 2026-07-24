@@ -262,7 +262,7 @@ static void check_burnout(uint16_t *state, double magnitude) {
 #define ALTITUDE_LOCK 1000
 #define ALTITUDE_WINDOW_SIZE 10
 
-static void check_altitude_lock(uint8_t *state, float altitude) {
+static void check_altitude_lock(uint16_t *state, float altitude) {
   static double altitude_window[ALTITUDE_WINDOW_SIZE];
   static int window_index = 0;
   static bool first_window_iteration = false;
@@ -280,21 +280,61 @@ static void check_altitude_lock(uint8_t *state, float altitude) {
   window_index %= ALTITUDE_WINDOW_SIZE;
   if (!first_window_iteration)
     return;
+
   float sum = 0;
   for (int y = 0; y < ALTITUDE_WINDOW_SIZE; y++) {
-    sum += altitude_window[y]
+    sum += altitude_window[y];
   }
   float average = sum / ALTITUDE_WINDOW_SIZE;
+
   if (average >= ALTITUDE_LOCK)
-    *state |= 0b100
+    *state |= 0b100;
+}
+
+float calc_tilt_sut(double magnitude, float accel_z) {
+  return acosf(accel_z / magnitude) * 180.0f / M_PI;
+}
+
+#define TILT_THRESHOLD 25.0f
+#define TILT_WINDOW_SIZE 10
+
+static void check_tilt(uint16_t *state, float tilt) {
+  static double tilt_window[TILT_WINDOW_SIZE];
+  static int window_index = 0;
+  static bool first_window_iteration = false;
+
+  if (!(*state & 0b100))
+    return;
+  if (*state & 0b1000)
+    return;
+  tilt_window[window_index++] = tilt;
+
+  if (!first_window_iteration && (window_index > TILT_WINDOW_SIZE - 1)) {
+    first_window_iteration = true;
+  }
+
+  window_index %= TILT_WINDOW_SIZE;
+
+  if (!first_window_iteration)
+    return;
+
+  float sum = 0;
+  for (int i = 0; i < TILT_WINDOW_SIZE; i++) {
+    sum += tilt_window[i];
+  }
+
+  float average = sum / TILT_WINDOW_SIZE;
+  if (average >= TILT_THRESHOLD)
+    *state |= 0b1000;
 }
 
 static uint16_t state = 0;
 
-static void check_state(double magnitude, float altitude) {
+static void check_state(double magnitude, float altitude, float tilt) {
   check_liftoff(&state, magnitude);
   check_burnout(&state, magnitude);
   check_altitude_lock(&state, altitude);
+  check_tilt(&state, tilt);
 }
 
 static void run_sut(void) {
@@ -328,7 +368,8 @@ static void run_sut(void) {
       float al = kalman_update(&k_altitude_sut, sut_data.altitude);
 
       double magnitude = sqrt(ax * ax + ay * ay + az * az);
-      check_state(magnitude, al);
+      float tilt = calc_tilt_sut(magnitude, az);
+      check_state(magnitude, al, tilt);
     }
 
     int sent = uart_write_bytes(RS232_UART, (const char *)tx, SUT_WRITE_SIZE);

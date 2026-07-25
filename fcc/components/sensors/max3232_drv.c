@@ -327,6 +327,44 @@ static void check_tilt(uint16_t *state, float tilt) {
     *state |= 0b1000;
 }
 
+#define ALTITUDE_WINDOW_SIZE 10
+
+static void check_if_altitude_descending(uint16_t *state, float altitude) {
+
+  static double altitude_window[ALTITUDE_WINDOW_SIZE];
+  static int window_index = 0;
+  static bool first_window_iteration = false;
+
+  if (!(*state & 0b1000))
+    return;
+  if (*state & 0b10000)
+    return;
+
+  altitude_window[window_index++] = altitude;
+
+  if (!first_window_iteration && (window_index > ALTITUDE_WINDOW_SIZE - 1)) {
+    first_window_iteration = true;
+  }
+
+  window_index %= ALTITUDE_WINDOW_SIZE;
+
+  if (!first_window_iteration)
+    return;
+
+  bool descending = true;
+
+  for (int i = 0, c = window_index; i < ALTITUDE_WINDOW_SIZE;
+       i++, c = (c + 1) % ALTITUDE_WINDOW_SIZE) {
+    int next = (c + 1) % ALTITUDE_WINDOW_SIZE;
+    if (altitude_window[next] >= altitude_window[c]) {
+      descending = false;
+    }
+  }
+
+  if (descending)
+    *state |= 0b10000;
+}
+
 static uint16_t state = 0;
 
 static void check_state(double magnitude, float altitude, float tilt) {
@@ -334,6 +372,7 @@ static void check_state(double magnitude, float altitude, float tilt) {
   check_burnout(&state, magnitude);
   check_altitude_lock(&state, altitude);
   check_tilt(&state, tilt);
+  check_if_altitude_descending(&state, altitude);
 }
 
 static void run_sut(void) {

@@ -2,7 +2,6 @@
 #include "esp_log.h"
 #include "math.h"
 #include <apogee.h>
-#include <bits/pthreadtypes.h>
 #include <bmp390_drv.h>
 #include <gps_drv.h>
 #include <kalman.h>

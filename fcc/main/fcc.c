@@ -8,10 +8,8 @@
 #include <weighted_average.h>
 
 #include "driver/gpio.h"
-#include "driver/i2c_master.h"
 #include "driver/uart.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2cdev.h"
 #include <math.h>

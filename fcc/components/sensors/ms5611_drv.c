@@ -20,7 +20,7 @@ esp_err_t ms5611_drv_init(int sda_gpio, int scl_gpio) {
     return ret;
   }
 
-  ESP_LOGI(TAG, "Initialized at 0x77");
+  ESP_LOGI(TAG, "Initialized at 0x76");
   return ESP_OK;
 }
 

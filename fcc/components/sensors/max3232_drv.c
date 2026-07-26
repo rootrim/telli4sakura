@@ -15,7 +15,6 @@
 #include <weighted_average.h>
 
 static const char *TAG = "MAX3232";
-static fcc_mode_t s_current_mode = FCC_MODE_DUR;
 
 static uint8_t calc_checksum(const uint8_t *buf, int len) {
   uint8_t cs = 0;
@@ -24,10 +23,9 @@ static uint8_t calc_checksum(const uint8_t *buf, int len) {
   return cs;
 }
 
-static bool check_mode_command(fcc_mode_t *out_mode) {
+bool check_mode_command(fcc_mode_t *out_mode) {
   uint8_t buf[CMD_PACKET_SIZE];
 
-  // timeout=0: veri yoksa hemen don, ana donguyu bloklamasin
   int len = uart_read_bytes(RS232_UART, buf, CMD_PACKET_SIZE, 0);
   if (len != CMD_PACKET_SIZE)
     return false;
@@ -40,7 +38,7 @@ static bool check_mode_command(fcc_mode_t *out_mode) {
   // TODO: Check if checksums are true or not
   uint8_t expected_cs = calc_checksum(buf, 2);
   if (buf[2] != expected_cs) {
-    ESP_LOGW(TAG, "Checksum mismatch: got 0x%02X expected 0x%02X", buf[4],
+    ESP_LOGW(TAG, "Checksum mismatch: got 0x%02X expected 0x%02X", buf[2],
              expected_cs);
     return false;
   }
@@ -60,11 +58,6 @@ static bool check_mode_command(fcc_mode_t *out_mode) {
     return false;
   }
 }
-
-/*
- * SIT: 36 byte'lik test paketini gonder.
- * Icerigi kendi test verine gore doldur (su an sifirlarla dolduruyor).
- */
 
 // TODO: Set actual pin numbers
 #define PIN_I2C_SDA 5
@@ -110,7 +103,11 @@ static void pack_float(uint8_t *buf, float val) {
   memcpy(buf, &val, sizeof(float));
 }
 
-static void run_sit(void) {
+static void pack_uint16(uint8_t *buf, uint16_t val) {
+  memcpy(buf, &val, sizeof(uint16_t));
+}
+
+void run_sit(fcc_mode_t *current_mode) {
   uint8_t packet[SIT_PACKET_SIZE] = {0};
 
   sensors_init();
@@ -118,7 +115,7 @@ static void run_sit(void) {
 
   ESP_LOGI(TAG, "SIT Sensors initialized");
 
-  while (s_current_mode == FCC_MODE_SIT) {
+  while (*current_mode == FCC_MODE_SIT) {
     TickType_t loop_start = xTaskGetTickCount();
 
     int32_t ms5611_pressure;
@@ -170,15 +167,9 @@ static void run_sit(void) {
     }
   next:
     vTaskDelayUntil(&loop_start, pdMS_TO_TICKS(LOOP_PERIOD_MS));
-    check_mode_command(&s_current_mode);
+    check_mode_command(current_mode);
   }
 }
-
-/*
- * SUT: 36 byte oku, isle, 6 byte cevap yaz.
- * timeout ile bloklayici okuma yapiyor; veri gelmezse belli bir sure sonra
- * vazgecer.
- */
 
 #define SUT_PACKET_SIZE 36
 
@@ -221,10 +212,13 @@ static void check_liftoff(uint16_t *state, double magnitude) {
 
   if (liftoff_counter >= LIFTOFF_CONFIRM_SAMPLES)
     *state |= 0b1;
+
+  if (*state & 0b1000000000000000) {
+    liftoff_counter = 0;
+  }
 }
 
 #define BURNOUT_WINDOW_SIZE 10
-// TODO: Tune threshold
 #define BURNOUT_ACCEL_THRESHOLD 0.0
 
 static void check_burnout(uint16_t *state, double magnitude) {
@@ -255,6 +249,11 @@ static void check_burnout(uint16_t *state, double magnitude) {
 
   if (average <= BURNOUT_ACCEL_THRESHOLD) {
     *state |= 0b10;
+  }
+
+  if (*state & 0b1000000000000000) {
+    window_index = 0;
+    first_window_iteration = false;
   }
 }
 
@@ -288,6 +287,11 @@ static void check_altitude_lock(uint16_t *state, float altitude) {
 
   if (average >= ALTITUDE_LOCK)
     *state |= 0b100;
+
+  if (*state & 0b1000000000000000) {
+    window_index = 0;
+    first_window_iteration = false;
+  }
 }
 
 float calc_tilt_sut(double magnitude, float accel_z) {
@@ -325,12 +329,14 @@ static void check_tilt(uint16_t *state, float tilt) {
   float average = sum / TILT_WINDOW_SIZE;
   if (average >= TILT_THRESHOLD)
     *state |= 0b1000;
+
+  if (*state & 0b1000000000000000) {
+    window_index = 0;
+    first_window_iteration = false;
+  }
 }
 
-#define ALTITUDE_WINDOW_SIZE 10
-
 static void check_if_altitude_descending(uint16_t *state, float altitude) {
-
   static double altitude_window[ALTITUDE_WINDOW_SIZE];
   static int window_index = 0;
   static bool first_window_iteration = false;
@@ -353,16 +359,32 @@ static void check_if_altitude_descending(uint16_t *state, float altitude) {
 
   bool descending = true;
 
-  for (int i = 0, c = window_index; i < ALTITUDE_WINDOW_SIZE;
+  // window_index en eski elemanı gösteriyor; N-1 ardışık çifti kontrol et
+  for (int i = 0, c = window_index; i < ALTITUDE_WINDOW_SIZE - 1;
        i++, c = (c + 1) % ALTITUDE_WINDOW_SIZE) {
     int next = (c + 1) % ALTITUDE_WINDOW_SIZE;
     if (altitude_window[next] >= altitude_window[c]) {
       descending = false;
+      break;
     }
   }
 
   if (descending)
     *state |= 0b10000;
+
+  if (*state & 0b1000000000000000) {
+    window_index = 0;
+    first_window_iteration = false;
+  }
+}
+
+static void check_parachute(uint16_t *state) {
+  if (!(*state & 0b10000))
+    return;
+  if (*state & 0b10000000)
+    return;
+
+  *state |= 0b10000000;
 }
 
 static uint16_t state = 0;
@@ -373,36 +395,43 @@ static void check_state(double magnitude, float altitude, float tilt) {
   check_altitude_lock(&state, altitude);
   check_tilt(&state, tilt);
   check_if_altitude_descending(&state, altitude);
+  check_parachute(&state);
+  if (state & 0b1000000000000000) {
+    state = 0;
+  }
 }
 
-static void run_sut(void) {
+#define SUT_HEADER 0xAA
+#define SUT_FOOTER1 0x0D
+#define SUT_FOOTER2 0x0A
+
+void run_sut(fcc_mode_t *current_mode) {
   sut_data sut_data = {0};
-  int len =
-      uart_read_bytes(RS232_UART, &sut_data, SUT_READ_SIZE, pdMS_TO_TICKS(200));
+  kalman_init_all_sut();
 
-  if (len != SUT_READ_SIZE) {
-    if (len > 0) {
-      ESP_LOGW(TAG, "SUT partial read: %d/%d", len, SUT_READ_SIZE);
+  while (*current_mode == FCC_MODE_SUT) {
+    int len = uart_read_bytes(RS232_UART, &sut_data, SUT_READ_SIZE,
+                              pdMS_TO_TICKS(200));
+
+    if (len != SUT_READ_SIZE) {
+      if (len > 0) {
+        ESP_LOGW(TAG, "SUT partial read: %d/%d", len, SUT_READ_SIZE);
+      }
+      return;
     }
-    return;
-  }
 
-  while (s_current_mode == FCC_MODE_SUT) {
     TickType_t loop_start = xTaskGetTickCount();
 
-    // TODO: Process rx
     uint8_t tx[SUT_WRITE_SIZE] = {0};
-
-    // TODO: Read virtual data
 
     {
       float ax = kalman_update(&k_accel_x_sut, sut_data.accel_x);
       float ay = kalman_update(&k_accel_y_sut, sut_data.accel_y);
       float az = kalman_update(&k_accel_z_sut, sut_data.accel_z);
-      float gx = kalman_update(&k_gyro_x_sut, sut_data.angle_x);
-      float gy = kalman_update(&k_gyro_y_sut, sut_data.angle_y);
-      float gz = kalman_update(&k_gyro_z_sut, sut_data.angle_z);
-      float pr = kalman_update(&k_pressure_sut, sut_data.pressure);
+      // float gx = kalman_update(&k_gyro_x_sut, sut_data.angle_x);
+      // float gy = kalman_update(&k_gyro_y_sut, sut_data.angle_y);
+      // float gz = kalman_update(&k_gyro_z_sut, sut_data.angle_z);
+      // float pr = kalman_update(&k_pressure_sut, sut_data.pressure);
       float al = kalman_update(&k_altitude_sut, sut_data.altitude);
 
       double magnitude = sqrt(ax * ax + ay * ay + az * az);
@@ -410,31 +439,36 @@ static void run_sut(void) {
       check_state(magnitude, al, tilt);
     }
 
+    if (state & 0b1000000000000000)
+      state ^= 0b1000000000000000;
+
+    tx[0] = SUT_HEADER;
+    pack_uint16(&tx[1], state);
+    tx[3] = calc_checksum(tx, 2);
+    tx[4] = SUT_FOOTER1;
+    tx[5] = SUT_FOOTER2;
+
     int sent = uart_write_bytes(RS232_UART, (const char *)tx, SUT_WRITE_SIZE);
     if (sent != SUT_WRITE_SIZE) {
       ESP_LOGE(TAG, "SUT write incomplete: %d/%d", sent, SUT_WRITE_SIZE);
     }
 
     vTaskDelayUntil(&loop_start, pdMS_TO_TICKS(LOOP_PERIOD_MS));
-    check_mode_command(&s_current_mode);
+    check_mode_command(current_mode);
+    if (*current_mode != FCC_MODE_SUT) {
+      state |= 0b1000000000000000;
+      check_state(0, 0, 0);
+    }
   }
 }
 
-void fcc_mode_step(void) {
-  // fcc_mode_t new_mode;
-  // if (check_mode_command(&new_mode)) {
-  //   if (new_mode != s_current_mode) {
-  //     ESP_LOGI(TAG, "Mode changed: %d -> %d", s_current_mode, new_mode);
-  //     s_current_mode = new_mode;
-  //   }
-  // }
-
-  switch (s_current_mode) {
+void fcc_mode_step(fcc_mode_t *current_mode) {
+  switch (*current_mode) {
   case FCC_MODE_SIT:
-    run_sit();
+    run_sit(current_mode);
     break;
   case FCC_MODE_SUT:
-    run_sut();
+    run_sut(current_mode);
     break;
   case FCC_MODE_DUR:
   default:

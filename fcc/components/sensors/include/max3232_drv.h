@@ -42,3 +42,6 @@ typedef struct {
   uint8_t footer1;
   uint8_t footer2;
 } sut_data;
+
+void run_sut(fcc_mode_t *current_mode);
+void run_sit(fcc_mode_t *current_mode);

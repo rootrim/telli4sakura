@@ -4,7 +4,6 @@
 #include "minmea.h"
 
 #define GPS_BUF_SIZE (512)
-#define GPS_TIMEOUT_MS (2000)
 
 static const char *TAG = "gps_drv";
 static int s_uart_num;
@@ -37,27 +36,21 @@ esp_err_t gps_drv_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate) {
   return ESP_OK;
 }
 
+static char line[MINMEA_MAX_SENTENCE_LENGTH];
+static int idx = 0;
+
 esp_err_t gps_drv_read(gps_data_t *data) {
-  char line[MINMEA_MAX_SENTENCE_LENGTH];
   uint8_t ch;
-  int idx = 0;
 
-  TickType_t timeout = pdMS_TO_TICKS(GPS_TIMEOUT_MS);
-  TickType_t start = xTaskGetTickCount();
-
-  while ((xTaskGetTickCount() - start) < timeout) {
-    if (uart_read_bytes(s_uart_num, &ch, 1, pdMS_TO_TICKS(10)) != 1) {
-      continue;
-    }
-
+  while (uart_read_bytes(s_uart_num, &ch, 1, 0) == 1) {
     if (ch == '\n') {
       line[idx] = '\0';
       idx = 0;
-
-      // GGA cümlesi: lat/lon/fix bilgisi
-      if (minmea_sentence_id(line, false) == MINMEA_SENTENCE_GGA) {
+      if (minmea_sentence_id(line, true) == MINMEA_SENTENCE_GGA) {
         struct minmea_sentence_gga frame;
         if (minmea_parse_gga(&frame, line) && frame.fix_quality > 0) {
+          ESP_LOGI(TAG, "GGA emitted, fix_quality=%d, sats=%d",
+                   frame.fix_quality, frame.satellites_tracked);
           data->latitude = minmea_tocoord(&frame.latitude);
           data->longitude = minmea_tocoord(&frame.longitude);
           return ESP_OK;
@@ -67,11 +60,11 @@ esp_err_t gps_drv_read(gps_data_t *data) {
       if (idx < (int)sizeof(line) - 1) {
         line[idx++] = ch;
       } else {
-        idx = 0; // overflow, satırı at
+        idx = 0;
       }
     }
   }
 
-  ESP_LOGW(TAG, "Timeout waiting for GPS fix");
-  return ESP_ERR_TIMEOUT;
+  ESP_LOGD(TAG, "GGA not yet complete, will continue next call");
+  return ESP_ERR_NOT_FOUND;
 }

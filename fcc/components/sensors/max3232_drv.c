@@ -461,20 +461,3 @@ void run_sut(fcc_mode_t *current_mode) {
     }
   }
 }
-
-void fcc_mode_step(fcc_mode_t *current_mode) {
-  switch (*current_mode) {
-  case FCC_MODE_SIT:
-    run_sit(current_mode);
-    break;
-  case FCC_MODE_SUT:
-    run_sut(current_mode);
-    break;
-  case FCC_MODE_DUR:
-  default:
-    // Normal FCC dongusu (sensor okuma + kalman + LoRa) burada
-    // zaten var olan app_main dongunde calisiyor olmali;
-    // bu fonksiyon sadece diger iki moda mudahale ediyor.
-    break;
-  }
-}

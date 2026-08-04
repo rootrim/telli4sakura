@@ -2,6 +2,7 @@
 #include "driver/uart.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include <stdint.h>
 #include <string.h>
 
 static const char *TAG = "lora";
@@ -69,12 +70,52 @@ esp_err_t lora_send(const lora_packet_data_t *data) {
   packet[42] = LORA_FOOTER_1;
   packet[43] = LORA_FOOTER_2;
 
-  int sent =
-      uart_write_bytes(s_uart_num, (const char *)packet, LORA_PACKET_SIZE);
+  int sent = uart_write_bytes(s_uart_num, packet, LORA_PACKET_SIZE);
   if (sent != LORA_PACKET_SIZE) {
     ESP_LOGE(TAG, "Send failed: wrote %d of %d bytes", sent, LORA_PACKET_SIZE);
     return ESP_FAIL;
   }
 
   return ESP_OK;
+}
+
+void lora_dump_raw(void) {
+  uint8_t buf[128];
+  int len =
+      uart_read_bytes(s_uart_num, buf, sizeof(buf) - 1, pdMS_TO_TICKS(50));
+  if (len > 0) {
+    buf[len] = '\0';
+    printf("%s", (char *)buf);
+  }
+}
+
+void lora_config(void) {
+  uint8_t config[] = {
+      0xC0, // Write config to flash
+      0x00, // Start register
+      0x06, // Length
+
+      0x00, // ADDH = 0
+      0x45, // ADDL = 69
+
+      0x01, // NETID
+
+      0x64, // REG0
+            // UART / Air rate ayarı
+
+      0x00, // REG1
+            // Power / transmission mode
+
+      0x1F // REG2 = Channel 31
+  };
+
+  vTaskDelay(pdMS_TO_TICKS(1000));
+
+  int sent = uart_write_bytes(s_uart_num, config, 9);
+  if (sent != 9) {
+    ESP_LOGE(TAG, "Send failed: wrote %d of %d bytes", sent, LORA_PACKET_SIZE);
+    return;
+  }
+
+  lora_dump_raw();
 }

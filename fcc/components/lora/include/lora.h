@@ -1,9 +1,9 @@
 #pragma once
 
 #include "esp_err.h"
-#include <stdint.h>
 
 #define LORA_PACKET_SIZE 44
+#define LORA_CONFIG_SIZE 12
 #define LORA_HEADER 0xAB
 #define LORA_FOOTER_1 0x0D
 #define LORA_FOOTER_2 0x0A
@@ -42,3 +42,6 @@ esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate);
  * @return esp_err_t ESP_OK on success.
  */
 esp_err_t lora_send(const lora_packet_data_t *data);
+
+void lora_dump_raw(void);
+void lora_config(void);

@@ -80,16 +80,16 @@ def main():
     # -----------------------------
     # Gerçek (ideal) değerler
     # -----------------------------
-    TRUE_ALTITUDE = 87.5
-    TRUE_PRESSURE = 100125.0
+    TRUE_ALTITUDE = 0
+    TRUE_PRESSURE = 0
 
-    TRUE_ACCEL_X = 0.12
-    TRUE_ACCEL_Y = -0.05
-    TRUE_ACCEL_Z = 9.81
+    TRUE_ACCEL_X = 0
+    TRUE_ACCEL_Y = 0
+    TRUE_ACCEL_Z = 0
 
-    TRUE_ANGLE_X = 1.8
-    TRUE_ANGLE_Y = -0.7
-    TRUE_ANGLE_Z = 32.0
+    TRUE_ANGLE_X = 0
+    TRUE_ANGLE_Y = 0
+    TRUE_ANGLE_Z = 0
 
     TRUE_GPS_LAT = 41.01642856878581
     TRUE_GPS_LON = 29.220506690302834
@@ -97,11 +97,11 @@ def main():
     # -----------------------------
     # Noise (Standart Sapma)
     # -----------------------------
-    ALTITUDE_NOISE = 0.30      # metre
-    PRESSURE_NOISE = 3.0       # Pa
+    ALTITUDE_NOISE = 0.0      # metre
+    PRESSURE_NOISE = 0.0       # Pa
 
-    ACCEL_NOISE = 0.03         # m/s²
-    ANGLE_NOISE = 0.15         # derece
+    ACCEL_NOISE = 0.0         # m/s²
+    ANGLE_NOISE = 0.0         # derece
 
     GPS_NOISE = 0.000001        # yaklaşık 1 metre
 

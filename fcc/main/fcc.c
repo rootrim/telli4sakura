@@ -3,6 +3,7 @@
 #include <gps_drv.h>
 #include <kalman.h>
 #include <lora.h>
+#include <max3232_drv.h>
 #include <mpu6050_drv.h>
 #include <ms5611_drv.h>
 #include <weighted_average.h>
@@ -12,26 +13,52 @@
 #include "esp_log.h"
 #include "freertos/task.h"
 #include "i2cdev.h"
+#include "soc/gpio_num.h"
 #include <math.h>
 
 static const char *TAG = "fcc";
+static volatile fcc_mode_t current_mode = FCC_MODE_DUR;
 
 // TODO: Set actual pin numbers
 #define PIN_I2C_SDA 5
-#define PIN_I2C_SCL 6
-#define PIN_GPS_TX 17
-#define PIN_GPS_RX 18
-#define PIN_LORA_TX 7
-#define PIN_LORA_RX 8
-#define PIN_LED_APOGEE 10
+#define PIN_I2C_SCL 1
+#define PIN_GPS_TX 10
+#define PIN_GPS_RX 11
+#define PIN_LORA_TX 12
+#define PIN_LORA_RX 13
+#define PIN_LED_APOGEE 3
+#define PIN_BUZZER 6
+// TODO: FIX OR ILL FUCK YOU
+#define PIN_RS232_TX 43
+#define PIN_RS232_RX 44
+#define RS232_BAUD 115200
+#define RS232_UART_NUM UART_NUM_0
 
 #define I2C_PORT I2C_NUM_0
 #define GPS_UART UART_NUM_1
 #define LORA_UART UART_NUM_2
-#define GPS_BAUD 9600
+#define GPS_BAUD 38400
 
 // 5Hz = 200ms
 #define LOOP_PERIOD_MS 200
+
+volatile uint32_t buzzer_interval_ms = 1000; // 0 = kapalı
+
+void buzzer_task(void *arg) {
+  while (1) {
+    if (buzzer_interval_ms == 0) {
+      gpio_set_level(PIN_BUZZER, 0);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
+
+    gpio_set_level(PIN_BUZZER, 1);
+    vTaskDelay(pdMS_TO_TICKS(100)); // Bip süresi
+
+    gpio_set_level(PIN_BUZZER, 0);
+    vTaskDelay(pdMS_TO_TICKS(buzzer_interval_ms));
+  }
+}
 
 // Kalman instances — one per filtered value
 static kalman_t k_pressure_ms;
@@ -44,19 +71,35 @@ static kalman_t k_gyro_y;
 static kalman_t k_gyro_z;
 
 static void sensors_init(void) {
-  ESP_ERROR_CHECK(i2cdev_init());
-  ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  i2c_master_bus_handle_t i2c_bus;
-  ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
-  ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
-  ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
-  ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
+  // ESP_LOGI(TAG, "i2cdev_init basliyor");
+  // ESP_ERROR_CHECK(i2cdev_init());
+  // ESP_LOGI(TAG, "i2cdev_init tamamlandi");
+  //
+  // // ESP_LOGI(TAG, "ms5611_drv_init basliyor");
+  // // ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+  // // ESP_LOGI(TAG, "ms5611_drv_init tamamlandi");
+  //
+  // ESP_LOGI(TAG, "mpu6050_drv_init basliyor");
+  // ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+  // ESP_LOGI(TAG, "mpu6050_drv_init tamamlandi");
+  //
+  // ESP_LOGI(TAG, "i2cdev_get_shared_handle basliyor");
+  // i2c_master_bus_handle_t i2c_bus;
+  // ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
+  // ESP_LOGI(TAG, "i2cdev_get_shared_handle tamamlandi");
+  //
+  // ESP_LOGI(TAG, "gps_drv_init basliyor");
+  // ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
+  // ESP_LOGI(TAG, "gps_drv_init tamamlandi");
+  //
+  // ESP_LOGI(TAG, "lora_init basliyor");
+  // ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
+  // ESP_LOGI(TAG, "lora_init tamamlandi");
 }
 
 static void kalman_init_all(void) {
-  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 0.0f);
-  kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 0.0f);
+  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 101325.0f);
+  kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 101325.0f);
   kalman_init(&k_accel_x, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_y, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_z, 0.05f, 0.0000769f, 9.81f);
@@ -65,8 +108,7 @@ static void kalman_init_all(void) {
   kalman_init(&k_gyro_z, 0.02f, 0.000125f, 0.0f);
 }
 
-void app_main(void) {
-
+void main_quest(void) {
   ////////////////////////
   gpio_reset_pin(PIN_LED_APOGEE);
   gpio_set_direction(PIN_LED_APOGEE, GPIO_MODE_OUTPUT);
@@ -78,41 +120,46 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "FCC initialized, starting main loop at 5Hz");
 
-  while (1) {
+  while (current_mode == FCC_MODE_DUR) {
     TickType_t loop_start = xTaskGetTickCount();
 
     // --- Read sensors ---
-    int32_t ms5611_pressure;
-    float ms5611_temp;
-    float bmp390_pressure, bmp390_temp;
+    // int32_t ms5611_pressure;
+    // float ms5611_temp;
+    // float bmp390_pressure, bmp390_temp;
     mpu6050_acceleration_t accel;
     mpu6050_rotation_t gyro;
     gps_data_t gps;
 
-    esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
-    esp_err_t r_bmp = bmp390_drv_read(&bmp390_pressure, &bmp390_temp);
+    // esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
+    // esp_err_t r_bmp = bmp390_drv_read(&bmp390_pressure, &bmp390_temp);
     esp_err_t r_mpu = mpu6050_drv_read(&accel, &gyro);
     esp_err_t r_gps = gps_drv_read(&gps);
 
-    if (r_ms != ESP_OK || r_bmp != ESP_OK || r_mpu != ESP_OK) {
+    if (/* r_ms != ESP_OK || r_bmp != ESP_OK || */ r_mpu != ESP_OK) {
       ESP_LOGE(TAG, "Sensor read error");
       goto next;
     }
 
     {
+      int32_t ms5611_pressure =
+          (int32_t)(SIT_FAKE_PRESSURE_BASE_PA + generate_pressure_noise());
+
       // --- Kalman filter ---
       float ax = kalman_update(&k_accel_x, accel.x);
       float ay = kalman_update(&k_accel_y, accel.y);
       float az = kalman_update(&k_accel_z, accel.z);
-      float tilt = calc_tilt(&accel);
       float gx = kalman_update(&k_gyro_x, gyro.x);
       float gy = kalman_update(&k_gyro_y, gyro.y);
       float gz = kalman_update(&k_gyro_z, gyro.z);
       float pressure_ms = kalman_update(&k_pressure_ms, ms5611_pressure);
-      float pressure_bmp = kalman_update(&k_pressure_bmp, bmp390_pressure);
+      // float pressure_bmp = kalman_update(&k_pressure_bmp, bmp390_pressure);
+      //
+
+      float tilt = calc_tilt(ax, ay, az);
 
       // TODO: tune weights based on sensor accuracy tests
-      float pressure = weighted_average(pressure_ms, 0.5f, pressure_bmp, 0.5f);
+      float pressure = weighted_average(pressure_ms, 0.5f, pressure_ms, 0.5f);
 
       float altitude = 44330.0f * (1.0f - powf(pressure / 101325.0f, 0.1903f));
 
@@ -142,9 +189,66 @@ void app_main(void) {
           .gps_lon = lon,
       };
       lora_send(&pkt);
+      lora_dump_raw();
     }
 
   next:
     vTaskDelayUntil(&loop_start, pdMS_TO_TICKS(LOOP_PERIOD_MS));
   }
+}
+
+static volatile fcc_mode_t pending_mode;
+static volatile bool mode_pending = false;
+static volatile TickType_t mode_pending_since;
+
+void command_task(void *pvParameters) {
+  uint8_t buf[CMD_PACKET_SIZE];
+
+  while (1) {
+    int len = uart_read_bytes(RS232_UART_NUM, buf, CMD_PACKET_SIZE,
+                              pdMS_TO_TICKS(50));
+
+    if (len == CMD_PACKET_SIZE && buf[0] == CMD_HEADER &&
+        buf[1] == CMD_SIT_COMMAND && buf[3] == 0x0D && buf[4] == 0x0A &&
+        !mode_pending) {
+      ESP_LOGI(TAG, "SIT command received, switching in 1 second");
+      pending_mode = FCC_MODE_SIT;
+      mode_pending = true;
+      mode_pending_since = xTaskGetTickCount();
+    }
+
+    if (mode_pending &&
+        (xTaskGetTickCount() - mode_pending_since) >= pdMS_TO_TICKS(1000)) {
+      current_mode = pending_mode;
+      mode_pending = false;
+      ESP_LOGI(TAG, "Mode applied after 1 second");
+    }
+  }
+}
+
+void app_main(void) {
+  ESP_ERROR_CHECK(
+      max3232_drv_init(RS232_UART_NUM, PIN_RS232_TX, PIN_RS232_RX, RS232_BAUD));
+  // xTaskCreate(command_task, "cmd_task", 4096, NULL, 5, NULL);
+  //
+  current_mode = FCC_MODE_SIT;
+  // xTaskCreate(buzzer_task, "buzzer", 2048, NULL, 1, NULL);
+
+  for (;;)
+    switch (current_mode) {
+    case FCC_MODE_SIT:
+      run_sit(&current_mode);
+      break;
+    case FCC_MODE_SUT:
+      ESP_LOGI(TAG, "Switching to SUT");
+      run_sut(&current_mode);
+      ESP_LOGI(TAG, "Returned from SUT");
+      break;
+    case FCC_MODE_DUR:
+      main_quest();
+      break;
+    default:
+      main_quest();
+      break;
+    }
 }

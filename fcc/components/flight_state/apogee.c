@@ -16,12 +16,11 @@ void flight_state_init(void) {
 }
 
 bool flight_state_update(float altitude_m, float tilt_deg) {
-  if (s_apogee_fired)
-    return false;
+  // if (s_apogee_fired)
+  //   return false;
 
-  if (!s_altitude_lock && altitude_m >= APOGEE_MIN_ALTITUDE_M) {
+  if (!s_altitude_lock && altitude_m >= APOGEE_MIN_ALTITUDE_M)
     s_altitude_lock = true;
-  }
   if (!s_altitude_lock)
     return false;
 

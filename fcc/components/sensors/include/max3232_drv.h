@@ -1,7 +1,9 @@
 #pragma once
 
+#include "esp_err.h"
+#include <stdbool.h>
 #include <stdint.h>
-#define RS232_UART UART_NUM_0
+#define RS232_UART_NUM UART_NUM_0
 
 #define CMD_HEADER 0xAA
 #define CMD_FOOTER1 0x0D
@@ -28,7 +30,7 @@ typedef enum {
   FCC_MODE_DUR = 0x24,
 } fcc_mode_t;
 
-typedef struct {
+typedef struct __attribute__((packed)) {
   uint8_t header;
   float altitude;
   float pressure;
@@ -43,5 +45,9 @@ typedef struct {
   uint8_t footer2;
 } sut_data;
 
-void run_sut(fcc_mode_t *current_mode);
-void run_sit(fcc_mode_t *current_mode);
+void run_sut(fcc_mode_t volatile *current_mode);
+void run_sit(fcc_mode_t volatile *current_mode);
+bool check_mode_command(fcc_mode_t volatile *out_mode);
+void mode_apply_pending(fcc_mode_t volatile *current_mode);
+esp_err_t max3232_drv_init(int uart_num, int tx_gpio, int rx_gpio,
+                           int baud_rate);

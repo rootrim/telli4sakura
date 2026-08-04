@@ -19,7 +19,7 @@ static void ubx_checksum(const uint8_t *data, int len, uint8_t *ck_a,
   }
 }
 
-static esp_err_t gps_drv_set_rate(int hz) {
+esp_err_t gps_drv_set_rate(int uart, int hz) {
   if (hz <= 0 || hz > 20) {
     ESP_LOGE(TAG, "Invalid rate: %d", hz);
     return ESP_ERR_INVALID_ARG;
@@ -49,9 +49,9 @@ static esp_err_t gps_drv_set_rate(int hz) {
   packet[sizeof(packet) - 1] = ck_b;
 
   // Once gelen NMEA/UBX ne varsa temizle, ACK'i temiz gorelim
-  uart_flush_input(s_uart_num);
+  uart_flush_input(uart);
 
-  int sent = uart_write_bytes(s_uart_num, (const char *)packet, sizeof(packet));
+  int sent = uart_write_bytes(uart, packet, sizeof(packet));
   if (sent != sizeof(packet)) {
     ESP_LOGE(TAG, "UBX-CFG-RATE write incomplete: %d/%d", sent,
              (int)sizeof(packet));
@@ -65,7 +65,7 @@ static esp_err_t gps_drv_set_rate(int hz) {
   TickType_t start = xTaskGetTickCount();
   while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(500) &&
          total < (int)sizeof(resp)) {
-    int n = uart_read_bytes(s_uart_num, &resp[total], 1, pdMS_TO_TICKS(50));
+    int n = uart_read_bytes(uart, &resp[total], 1, pdMS_TO_TICKS(50));
     if (n == 1) {
       total++;
       if (total >= 4) {
@@ -112,7 +112,7 @@ esp_err_t gps_drv_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate) {
   if (ret != ESP_OK)
     return ret;
 
-  esp_err_t rate_ret = gps_drv_set_rate(GPS_DATA_HZ);
+  esp_err_t rate_ret = gps_drv_set_rate(uart_num, GPS_DATA_HZ);
   if (rate_ret != ESP_OK) {
     ESP_LOGW(TAG, "Failed to set GPS rate, continuing with default");
   }
@@ -152,4 +152,14 @@ esp_err_t gps_drv_read(gps_data_t *data) {
 
   ESP_LOGD(TAG, "GGA not yet complete, will continue next call");
   return ESP_ERR_NOT_FOUND;
+}
+
+void gps_drv_dump_raw(void) {
+  uint8_t buf[128];
+  int len =
+      uart_read_bytes(s_uart_num, buf, sizeof(buf) - 1, pdMS_TO_TICKS(50));
+  if (len > 0) {
+    buf[len] = '\0';
+    printf("%s", (char *)buf);
+  }
 }

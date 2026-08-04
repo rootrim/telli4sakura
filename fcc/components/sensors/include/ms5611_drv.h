@@ -1,5 +1,7 @@
 #pragma once
 
+#define SIT_FAKE_PRESSURE_BASE_PA 100332.0f
+
 #include "esp_err.h"
 #include "ms5611.h"
 
@@ -16,3 +18,5 @@ esp_err_t ms5611_drv_init(int sda_gpio, int scl_gpio);
  * @param temp_c       Celsius
  */
 esp_err_t ms5611_drv_read(int32_t *pressure_pa, float *temp_c);
+
+float generate_pressure_noise(void);

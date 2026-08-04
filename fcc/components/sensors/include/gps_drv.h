@@ -30,3 +30,7 @@ esp_err_t gps_drv_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate);
  * @return esp_err_t ESP_OK on success, ESP_ERR_TIMEOUT if no valid sentence.
  */
 esp_err_t gps_drv_read(gps_data_t *data);
+
+esp_err_t gps_drv_set_rate(int uart, int hz);
+
+void gps_drv_dump_raw(void);

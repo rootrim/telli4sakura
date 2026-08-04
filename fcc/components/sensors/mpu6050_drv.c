@@ -34,8 +34,19 @@ esp_err_t mpu6050_drv_read(mpu6050_acceleration_t *accel,
   return ret;
 }
 
-float calc_tilt(const mpu6050_acceleration_t *accel) {
-  float magnitude =
-      sqrtf(accel->x * accel->x + accel->y * accel->y + accel->z * accel->z);
-  return acosf(accel->z / magnitude) * 180.0f / M_PI;
+float calc_tilt(float ax, float ay, float az) {
+  float magnitude = sqrtf(ax * ax + ay * ay + az * az);
+
+  if (magnitude < 1e-6f)
+    return 0.0f;
+
+  float c = az / magnitude;
+
+  // Sayısal hatalara karşı
+  if (c > 1.0f)
+    c = 1.0f;
+  if (c < -1.0f)
+    c = -1.0f;
+
+  return acosf(c) * 180.0f / (float)M_PI;
 }

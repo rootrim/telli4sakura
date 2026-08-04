@@ -1,5 +1,6 @@
 #include "ms5611_drv.h"
 #include "esp_log.h"
+#include "esp_random.h"
 
 static const char *TAG = "ms5611_drv";
 static ms5611_t dev;
@@ -20,7 +21,7 @@ esp_err_t ms5611_drv_init(int sda_gpio, int scl_gpio) {
     return ret;
   }
 
-  ESP_LOGI(TAG, "Initialized at 0x76");
+  ESP_LOGI(TAG, "Initialized at 0x77");
   return ESP_OK;
 }
 
@@ -30,4 +31,14 @@ esp_err_t ms5611_drv_read(int32_t *pressure_pa, float *temp_c) {
     ESP_LOGE(TAG, "Read failed: %s", esp_err_to_name(ret));
   }
   return ret;
+}
+
+float generate_pressure_noise(void) {
+  // 4 uniform toplamı ile kaba gaussian, ortalama 0, ~±5 Pa aralık
+  float sum = 0.0f;
+  for (int i = 0; i < 4; i++) {
+    sum += (float)esp_random() / (float)UINT32_MAX;
+  }
+  sum -= 2.0f;
+  return sum * 2.5f;
 }

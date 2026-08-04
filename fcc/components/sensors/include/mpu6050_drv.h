@@ -25,8 +25,9 @@ esp_err_t mpu6050_drv_read(mpu6050_acceleration_t *accel,
 /**
  * @brief Turns acceleration value to tilt value
  *
- * @param[in] accel mpu6050_acceleration_t value
+ * @param[in] magnitude magnitude value
+ * @param[in] accel_z z-acceleration value
  * @return float tilt value
  *
  */
-float calc_tilt(const mpu6050_acceleration_t *accel);
+float calc_tilt(float accel_x, float accel_y, float accel_z);

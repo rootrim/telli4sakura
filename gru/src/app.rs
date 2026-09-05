@@ -13,14 +13,20 @@ pub struct App {
     running: bool,
     pub buffer: Arc<Mutex<Vec<f32>>>,
     pub last_packet: Arc<Mutex<Option<Packet>>>,
+    pub workload: Arc<Mutex<Option<Packet>>>,
 }
 
 impl App {
-    pub fn build(buffer: Arc<Mutex<Vec<f32>>>, last_packet: Arc<Mutex<Option<Packet>>>) -> Self {
+    pub fn build(
+        buffer: Arc<Mutex<Vec<f32>>>,
+        last_packet: Arc<Mutex<Option<Packet>>>,
+        workload: Arc<Mutex<Option<Packet>>>,
+    ) -> Self {
         Self {
             running: true,
             buffer,
             last_packet,
+            workload,
         }
     }
 

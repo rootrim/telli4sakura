@@ -18,6 +18,7 @@ impl App {
                 Constraint::Max(1),
                 Constraint::Fill(1),
                 Constraint::Max(3),
+                Constraint::Max(3),
             ])
             .split(frame.area());
 
@@ -92,6 +93,20 @@ impl App {
                     packet.gps_lon,
                 )).block(telemetry_block) ,
                 layout[2],
+            );
+        }
+
+        let workload = Block::default().borders(Borders::ALL).title("Workload");
+
+        let workload_packet = self.workload.lock().unwrap();
+        if let Some(workload_packet) = *workload_packet {
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "lat:{:.6} lon:{:.6}",
+                    workload_packet.gps_lat, workload_packet.gps_lon,
+                ))
+                .block(workload),
+                layout[3],
             );
         }
     }

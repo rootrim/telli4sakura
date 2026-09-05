@@ -29,6 +29,8 @@ fn main() -> io::Result<()> {
     let buffer_clone = Arc::clone(&buffer);
     let last_packet: Arc<Mutex<Option<Packet>>> = Arc::new(Mutex::new(None));
     let last_packet_clone = Arc::clone(&last_packet);
+    let workload_packet: Arc<Mutex<Option<Packet>>> = Arc::new(Mutex::new(None));
+    let workload_packet_clone = Arc::clone(&workload_packet);
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = Arc::clone(&running);
 
@@ -45,31 +47,35 @@ fn main() -> io::Result<()> {
 
         let mut buf = [0u8; PACKET_SIZE];
         while running_clone.load(Ordering::Relaxed) {
-            if let Err(e) = sync_to_header(&mut port) {
+            if let Err(_e) = sync_to_header(&mut port) {
                 continue;
             }
 
             buf[0] = HEADER;
-            if let Err(e) = read_exact(&mut port, &mut buf[1..]) {
+            if let Err(_e) = read_exact(&mut port, &mut buf[1..]) {
                 continue;
             }
 
             match Packet::from_bytes(&buf[..]) {
                 Ok(pkt) => {
-                    let mut buf = buffer_clone.lock().unwrap();
-                    buf.push(pkt.altitude);
-                    if buf.len() > 150 {
-                        buf.remove(0);
+                    if only_gps(&pkt) {
+                        *workload_packet_clone.lock().unwrap() = Some(pkt);
+                    } else {
+                        let mut buf = buffer_clone.lock().unwrap();
+                        buf.push(pkt.altitude);
+                        if buf.len() > 150 {
+                            buf.remove(0);
+                        }
+                        *last_packet_clone.lock().unwrap() = Some(pkt);
                     }
-                    *last_packet_clone.lock().unwrap() = Some(pkt);
                 }
-                Err(e) => continue,
+                Err(_e) => continue,
             }
         }
     });
 
     let terminal = ratatui::init();
-    let result = App::build(buffer, last_packet).run(terminal);
+    let result = App::build(buffer, last_packet, workload_packet).run(terminal);
     ratatui::restore();
     running.store(false, Ordering::Relaxed);
     handle.join().ok();
@@ -97,4 +103,22 @@ fn read_exact(port: &mut Box<dyn SerialPort>, buf: &mut [u8]) -> io::Result<()> 
         }
     }
     Ok(())
+}
+
+const SENTINEL: f32 = 69f32;
+
+fn only_gps(pkt: &Packet) -> bool {
+    if pkt.altitude == SENTINEL
+        && pkt.pressure == SENTINEL
+        && pkt.accel_x == SENTINEL
+        && pkt.accel_y == SENTINEL
+        && pkt.accel_z == SENTINEL
+        && pkt.angle_x == SENTINEL
+        && pkt.angle_y == SENTINEL
+        && pkt.angle_z == SENTINEL
+    {
+        true
+    } else {
+        false
+    }
 }

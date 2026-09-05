@@ -51,6 +51,7 @@ void buzzer_task(void *arg) {
 
 static void sensors_init(void) {
   ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
+  ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, 9600));
 }
 
 void main_quest(void) {
@@ -72,14 +73,14 @@ void main_quest(void) {
     ESP_LOGI(TAG, "lon=%.6f lat=%.2f", lon, lat);
 
     lora_packet_data_t pkt = {
-        .altitude = 0,
-        .pressure = 0,
-        .accel_x = 0,
-        .accel_y = 0,
-        .accel_z = 0,
-        .angle_x = 0,
-        .angle_y = 0,
-        .angle_z = 0,
+        .altitude = 69,
+        .pressure = 69,
+        .accel_x = 69,
+        .accel_y = 69,
+        .accel_z = 69,
+        .angle_x = 69,
+        .angle_y = 69,
+        .angle_z = 69,
         .gps_lat = lat,
         .gps_lon = lon,
     };

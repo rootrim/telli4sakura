@@ -97,7 +97,7 @@ static void i2c_scan(void) {
   }
 
   ESP_LOGI(I2C_SCANNER_TAG, "========================================");
-  ESP_LOGI(I2C_SCANNER_TAG, "I2C scan tamamlandi. %d cihaz bulundu.", found);
+  ESP_LOGI(I2C_SCANNER_TAG, "I2C scan completed. Found %d nigga(s).", found);
   ESP_LOGI(I2C_SCANNER_TAG, "========================================");
 
   /*
@@ -149,50 +149,108 @@ static kalman_t k_gyro_z;
 
 static void sensors_init(void) {
   ESP_LOGI(TAG, "i2cdev_init basliyor");
+
   ESP_ERROR_CHECK(i2cdev_init());
+
   ESP_LOGI(TAG, "i2cdev_init tamamlandi");
 
+  // --------------------------------------------------------
+  // MS5611
+  // --------------------------------------------------------
+
   ESP_LOGI(TAG, "ms5611_drv_init basliyor");
+
   ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+
   ESP_LOGI(TAG, "ms5611_drv_init tamamlandi");
 
+  // --------------------------------------------------------
+  // MPU6050
+  // --------------------------------------------------------
+
   ESP_LOGI(TAG, "mpu6050_drv_init basliyor");
+
   ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+
   ESP_LOGI(TAG, "mpu6050_drv_init tamamlandi");
 
+  // --------------------------------------------------------
+  // BMP280
+  // --------------------------------------------------------
+
   ESP_LOGI(TAG, "bmp280_drv_init basliyor");
+
   ESP_ERROR_CHECK(bmp280_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+
   ESP_LOGI(TAG, "bmp280_drv_init tamamlandi");
 
+  // --------------------------------------------------------
+  // GPS
+  // --------------------------------------------------------
+
   ESP_LOGI(TAG, "gps_drv_init basliyor");
+
   ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
+
   ESP_LOGI(TAG, "gps_drv_init tamamlandi");
 
+  // --------------------------------------------------------
+  // LoRa
+  // --------------------------------------------------------
+
   ESP_LOGI(TAG, "lora_init basliyor");
+
   ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
+
   ESP_LOGI(TAG, "lora_init tamamlandi");
 }
 
+// ============================================================
+// KALMAN INITIALIZATION
+// ============================================================
+
 static void kalman_init_all(void) {
   kalman_init(&k_pressure_ms, 0.05f, 1.44f, 101325.0f);
+
   kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 101325.0f);
+
   kalman_init(&k_accel_x, 0.05f, 0.0000769f, 0.0f);
+
   kalman_init(&k_accel_y, 0.05f, 0.0000769f, 0.0f);
+
   kalman_init(&k_accel_z, 0.05f, 0.0000769f, 9.81f);
+
   kalman_init(&k_gyro_x, 0.02f, 0.000125f, 0.0f);
+
   kalman_init(&k_gyro_y, 0.02f, 0.000125f, 0.0f);
+
   kalman_init(&k_gyro_z, 0.02f, 0.000125f, 0.0f);
 }
 
+// ============================================================
+// MAIN FLIGHT LOOP
+// ============================================================
+
 void main_quest(void) {
+  // --------------------------------------------------------
+  // Apogee LED
+  // --------------------------------------------------------
 
   gpio_reset_pin(PIN_LED_APOGEE);
   gpio_set_direction(PIN_LED_APOGEE, GPIO_MODE_OUTPUT);
   gpio_set_level(PIN_LED_APOGEE, 0);
 
+  // --------------------------------------------------------
+  // HGG Apogee
+  // --------------------------------------------------------
+
   gpio_reset_pin(PIN_HGG_APOGEE);
   gpio_set_direction(PIN_HGG_APOGEE, GPIO_MODE_OUTPUT);
   gpio_set_level(PIN_HGG_APOGEE, 0);
+
+  // --------------------------------------------------------
+  // Sensors
+  // --------------------------------------------------------
 
   sensors_init();
   kalman_init_all();
@@ -200,11 +258,12 @@ void main_quest(void) {
   ESP_LOGI(TAG, "FCC initialized, starting main loop at 5Hz");
 
   while (current_mode == FCC_MODE_DUR) {
-    // deadbeef uart test
-    // uint8_t test_message[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    // uart_write_bytes(RS232_UART_NUM, test_message, sizeof(test_message));
 
     TickType_t loop_start = xTaskGetTickCount();
+
+    // ----------------------------------------------------
+    // Read sensors
+    // ----------------------------------------------------
 
     int32_t ms5611_pressure;
     float ms5611_temp;
@@ -218,8 +277,11 @@ void main_quest(void) {
     gps_data_t gps;
 
     esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
+
     esp_err_t r_bmp = bmp280_drv_read(&bmp280_pressure, &bmp280_temp);
+
     esp_err_t r_mpu = mpu6050_drv_read(&accel, &gyro);
+
     esp_err_t r_gps = gps_drv_read(&gps);
 
     if (r_ms != ESP_OK || r_bmp != ESP_OK || r_mpu != ESP_OK) {
@@ -228,24 +290,38 @@ void main_quest(void) {
     }
 
     {
-      // int32_t ms5611_pressure = (int32_t)(SIT_FAKE_PRESSURE_BASE_PA +
-      // generate_pressure_noise());
+      // int32_t ms5611_pressure =
+      //     (int32_t)(
+      //         SIT_FAKE_PRESSURE_BASE_PA
+      //         + generate_pressure_noise()
+      //     );
 
       float ax = kalman_update(&k_accel_x, accel.x);
+
       float ay = kalman_update(&k_accel_y, accel.y);
+
       float az = kalman_update(&k_accel_z, accel.z);
+
       float gx = kalman_update(&k_gyro_x, gyro.x);
+
       float gy = kalman_update(&k_gyro_y, gyro.y);
+
       float gz = kalman_update(&k_gyro_z, gyro.z);
+
       float pressure_ms = kalman_update(&k_pressure_ms, ms5611_pressure);
+
       float pressure_bmp = kalman_update(&k_pressure_bmp, bmp280_pressure);
+
       float tilt = calc_tilt(ax, ay, az);
 
       // TODO: tune weights based on sensor accuracy tests
-      //
+
       float pressure = weighted_average(pressure_ms, 0.5f, pressure_bmp, 0.5f);
+
       float altitude = 44330.0f * (1.0f - powf(pressure / 101325.0f, 0.1903f));
+
       float lat = (r_gps == ESP_OK) ? gps.latitude : 0.0f;
+
       float lon = (r_gps == ESP_OK) ? gps.longitude : 0.0f;
 
       ESP_LOGI(TAG,
@@ -256,9 +332,11 @@ void main_quest(void) {
                altitude, pressure, ax, ay, az, gx, gy, gz, lat, lon, tilt);
 
       if (flight_state_update(altitude, tilt)) {
+
         gpio_set_level(PIN_LED_APOGEE, 1);
-        gpio_set_level(PIN_HGG_APOGEE, 1);
+
         ESP_LOGI(TAG, "APOGEE DETECTED");
+
         // Apogee part
       }
 
@@ -284,8 +362,17 @@ void main_quest(void) {
   }
 }
 
-void command_check_task(void *pvParameters) {
+// ============================================================
+// COMMAND TASK
+// ============================================================
+
+// Gercek SIT/SUT/DUR komut protokolu max3232_drv.c icinde
+// (check_mode_command + mode_apply_pending).
+// Burada sadece bunlari periyodik cagiriyoruz.
+
+void command_task(void *pvParameters) {
   while (1) {
+
     check_mode_command(&current_mode);
     mode_apply_pending(&current_mode);
 
@@ -293,34 +380,15 @@ void command_check_task(void *pvParameters) {
   }
 }
 
+// ============================================================
+// APP MAIN
+// ============================================================
+
 void app_main(void) {
-  i2c_scan();
+  TickType_t last_wake = xTaskGetTickCount();
 
-  ESP_ERROR_CHECK(
-      max3232_drv_init(RS232_UART_NUM, PIN_RS232_TX, PIN_RS232_RX, RS232_BAUD));
-
-  xTaskCreate(command_check_task, "cmd_task", 4096, NULL, 5, NULL);
-
-  // xTaskCreate(buzzer_task, "buzzer", 2048, NULL, 1, NULL);
-
-  for (;;) {
-
-    switch (current_mode) {
-    case FCC_MODE_SIT:
-      run_sit(&current_mode);
-      break;
-    case FCC_MODE_SUT:
-      ESP_LOGI(TAG, "Switching to SUT");
-      run_sut(&current_mode);
-      ESP_LOGI(TAG, "Returned from SUT");
-      break;
-    case FCC_MODE_DUR:
-      main_quest();
-      break;
-    default:
-      // safe default: flight mode (DUR)
-      main_quest();
-      break;
-    }
+  while (1) {
+    i2c_scan();
+    vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(1000));
   }
 }

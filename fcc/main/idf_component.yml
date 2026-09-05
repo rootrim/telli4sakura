@@ -17,3 +17,4 @@ dependencies:
   esp-idf-lib/ms5611: '*'
   k0i05/esp_bmp390: ^1.2.7
   esp-idf-lib/mpu6050: ^2.1.9
+  esp-idf-lib/bmp280: '*'

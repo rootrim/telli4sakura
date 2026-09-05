@@ -4,7 +4,7 @@
 
 // TODO: tune these values
 #define APOGEE_MIN_ALTITUDE_M                                                  \
-  800.0f // Altitude lock: must exceed this before apogee can trigger
+  300.0f // Altitude lock: must exceed this before apogee can trigger
 #define APOGEE_TILT_THRESHOLD                                                  \
   75.0f                 // Tilt angle (degrees) above which apogee can trigger
 #define APOGEE_WINDOW 5 // Number of samples used to detect descending altitude

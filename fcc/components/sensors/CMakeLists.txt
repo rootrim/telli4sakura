@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "ms5611_drv.c"
         "bmp390_drv.c"
+        "bmp280_drv.c"
         "mpu6050_drv.c"
         "gps_drv.c"
         "max3232_drv.c"
@@ -11,6 +12,7 @@ idf_component_register(
         esp-idf-lib__ms5611
         k0i05__esp_bmp390
         esp-idf-lib__mpu6050
+        esp-idf-lib__bmp280
         minmea
         filters
         flight_state

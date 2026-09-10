@@ -1,4 +1,5 @@
 #include "lora.h"
+#include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -8,7 +9,8 @@
 static const char *TAG = "lora";
 static int s_uart_num;
 
-esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate) {
+esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int m1_gpio,
+                    int baud_rate) {
   s_uart_num = uart_num;
 
   uart_config_t cfg = {
@@ -28,9 +30,16 @@ esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate) {
   if (ret != ESP_OK)
     return ret;
 
-  ret = uart_driver_install(uart_num, 256, 0, 0, NULL, 0);
-  if (ret != ESP_OK)
-    return ret;
+  if (!uart_is_driver_installed(uart_num)) {
+    ret = uart_driver_install(uart_num, 256, 0, 0, NULL, 0);
+    if (ret != ESP_OK)
+      return ret;
+  } else {
+    ESP_LOGW(TAG, "UART%d driver already installed, skipping install",
+             uart_num);
+  }
+
+  lora_config(m1_gpio);
 
   ESP_LOGI(TAG, "Initialized UART%d at %d baud", uart_num, baud_rate);
   return ESP_OK;
@@ -89,29 +98,30 @@ void lora_dump_raw(void) {
   }
 }
 
-void lora_config(void) {
+void lora_config(int m1_gpio) {
   uint8_t config[] = {
       0xC0, // Write config to flash
       0x00, // Start register
       0x06, // Length
-
-      0x00, // ADDH = 0
-      0x45, // ADDL = 69
-
-      0x01, // NETID
-
-      0x64, // REG0
-            // UART / Air rate ayarı
-
+      0x00, // ADDH
+      0x1F, // ADDL
+      0x3E, // NETID
+      0x63, // REG0
       0x00, // REG1
-            // Power / transmission mode
-
-      0x1F // REG2 = Channel 31
+      0x45  // REG2
   };
 
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  gpio_set_level(m1_gpio, 1);
+  vTaskDelay(pdMS_TO_TICKS(50));
 
   int sent = uart_write_bytes(s_uart_num, config, 9);
+
+  vTaskDelay(pdMS_TO_TICKS(100));
+
+  gpio_set_level(m1_gpio, 0);
+
+  vTaskDelay(pdMS_TO_TICKS(50));
+
   if (sent != 9) {
     ESP_LOGE(TAG, "Send failed: wrote %d of %d bytes", sent, LORA_PACKET_SIZE);
     return;

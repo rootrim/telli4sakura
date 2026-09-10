@@ -362,28 +362,6 @@ void main_quest(void) {
   }
 }
 
-// ============================================================
-// COMMAND TASK
-// ============================================================
-
-// Gercek SIT/SUT/DUR komut protokolu max3232_drv.c icinde
-// (check_mode_command + mode_apply_pending).
-// Burada sadece bunlari periyodik cagiriyoruz.
-
-void command_task(void *pvParameters) {
-  while (1) {
-
-    check_mode_command(&current_mode);
-    mode_apply_pending(&current_mode);
-
-    vTaskDelay(pdMS_TO_TICKS(50));
-  }
-}
-
-// ============================================================
-// APP MAIN
-// ============================================================
-
 void app_main(void) {
   TickType_t last_wake = xTaskGetTickCount();
 

@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "math.h"
 #include <apogee.h>
-// #include <bmp390_drv.h>
+#include <bmp280_drv.h>
 #include <gps_drv.h>
 #include <kalman.h>
 #include <limits.h>
@@ -45,13 +45,7 @@ static inline void write_be_u16(uint8_t *p, uint16_t v) {
   p[1] = v & 0xFF;
 }
 
-bool check_mode_command(fcc_mode_t volatile *out_mode) {
-  uint8_t buf[CMD_PACKET_SIZE];
-
-  int len = uart_read_bytes(RS232_UART_NUM, buf, CMD_PACKET_SIZE, 0);
-  if (len != CMD_PACKET_SIZE)
-    return false;
-
+static bool apply_command_packet(const uint8_t *buf) {
   if (buf[0] != CMD_HEADER) {
     ESP_LOGW(TAG, "Invalid header: 0x%02X", buf[0]);
     return false;
@@ -64,7 +58,6 @@ bool check_mode_command(fcc_mode_t volatile *out_mode) {
     return false;
   }
 
-  // Footer kontrolu (spesifikasyonun istedigi, eskiden hic yoktu)
   if (buf[3] != 0x0D || buf[4] != 0x0A) {
     ESP_LOGW(TAG, "Invalid footer: 0x%02X 0x%02X", buf[3], buf[4]);
     return false;
@@ -86,12 +79,6 @@ bool check_mode_command(fcc_mode_t volatile *out_mode) {
     return false;
   }
 
-  // Komut dogrulandi ama HENUZ uygulanmiyor -- 1 saniye sonra uygulanacak
-  // pending_mode = new_mode;
-  // mode_pending = true;
-  // mode_pending_since = xTaskGetTickCount();
-  // ESP_LOGI(TAG, "Command validated, will apply in 1000ms");
-  // return true;
   pending_mode = new_mode;
   mode_pending = true;
   mode_pending_since = xTaskGetTickCount();
@@ -100,9 +87,25 @@ bool check_mode_command(fcc_mode_t volatile *out_mode) {
   return true;
 }
 
+bool check_mode_command(fcc_mode_t volatile *out_mode) {
+  if (out_mode && *out_mode == FCC_MODE_SUT)
+    return false;
+
+  uint8_t buf[CMD_PACKET_SIZE];
+
+  int len = uart_read_bytes(RS232_UART_NUM, buf, CMD_PACKET_SIZE, 0);
+  if (len != CMD_PACKET_SIZE)
+    return false;
+
+  return apply_command_packet(buf);
+}
+
 // TODO: Set actual pin numbers
-#define PIN_I2C_SDA 5
+#define PIN_I2C_SDA 2
 #define PIN_I2C_SCL 1
+
+#define PIN_LED_APOGEE 3
+#define PIN_BUZZER 6
 
 #define I2C_PORT I2C_NUM_0
 
@@ -111,7 +114,7 @@ bool check_mode_command(fcc_mode_t volatile *out_mode) {
 
 // Kalman instances — one per filtered value
 static kalman_t k_pressure_ms;
-// static kalman_t k_pressure_bmp;
+static kalman_t k_pressure_bmp;
 static kalman_t k_accel_x;
 static kalman_t k_accel_y;
 static kalman_t k_accel_z;
@@ -121,17 +124,15 @@ static kalman_t k_gyro_z;
 
 static void sensors_init(void) {
   ESP_ERROR_CHECK(i2cdev_init());
-  // ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+  ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
   ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  i2c_master_bus_handle_t i2c_bus;
-  ESP_ERROR_CHECK(i2cdev_get_shared_handle(I2C_PORT, (void **)&i2c_bus));
-  // ESP_ERROR_CHECK(bmp390_drv_init(i2c_bus));
+  ESP_ERROR_CHECK(bmp280_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
 }
 
 static void kalman_init_all(void) {
   // TODO: tune parameters for 10Hz
-  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 0.0f);
-  // kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 0.0f);
+  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 99282.88f);
+  kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 99282.88f);
   kalman_init(&k_accel_x, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_y, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_z, 0.05f, 0.0000769f, 9.81f);
@@ -149,31 +150,36 @@ void run_sit(fcc_mode_t volatile *current_mode) {
 
   ESP_LOGI(TAG, "SIT Sensors initialized");
 
-  TickType_t sit_start = xTaskGetTickCount();
+  // TickType_t sit_start = xTaskGetTickCount();
 
   while (*current_mode == FCC_MODE_SIT) {
     TickType_t loop_start = xTaskGetTickCount();
 
-    if ((loop_start - sit_start) >= pdMS_TO_TICKS(5000)) {
-      ESP_LOGI(TAG, "SIT duration elapsed, switching to SUT");
-      *current_mode = FCC_MODE_SUT;
-      break;
-    }
+    // if ((loop_start - sit_start) >= pdMS_TO_TICKS(5000)) {
+    //   ESP_LOGI(TAG, "SIT duration elapsed, switching to SUT");
+    //   *current_mode = FCC_MODE_SUT;
+    //   break;
+    // }
+
+    int32_t ms5611_pressure;
+    float ms5611_temp;
+
+    float bmp280_pressure;
+    float bmp280_temp;
 
     mpu6050_acceleration_t accel;
     mpu6050_rotation_t gyro;
 
     esp_err_t r_mpu = mpu6050_drv_read(&accel, &gyro);
+    esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
+    esp_err_t r_bmp = bmp280_drv_read(&bmp280_pressure, &bmp280_temp);
 
-    if (r_mpu != ESP_OK) {
+    if (r_ms != ESP_OK || r_bmp != ESP_OK || r_mpu != ESP_OK) {
       ESP_LOGE(TAG, "Sensor read error: %s", esp_err_to_name(r_mpu));
       goto next;
     }
 
     {
-      int32_t ms5611_pressure =
-          (int32_t)(SIT_FAKE_PRESSURE_BASE_PA + generate_pressure_noise());
-
       float ax = kalman_update(&k_accel_x, accel.x);
       float ay = kalman_update(&k_accel_y, accel.y);
       float az = kalman_update(&k_accel_z, accel.z);
@@ -181,8 +187,9 @@ void run_sit(fcc_mode_t volatile *current_mode) {
       float gy = kalman_update(&k_gyro_y, gyro.y);
       float gz = kalman_update(&k_gyro_z, gyro.z);
       float pressure_ms = kalman_update(&k_pressure_ms, ms5611_pressure);
+      float pressure_bmp = kalman_update(&k_pressure_bmp, bmp280_pressure);
 
-      float pressure = weighted_average(pressure_ms, 0.5f, pressure_ms, 0.5f);
+      float pressure = weighted_average(pressure_ms, 0.5f, pressure_bmp, 0.5f);
       float altitude = 44330.0f * (1.0f - powf(pressure / 101325.0f, 0.1903f));
 
       ESP_LOGI(TAG,
@@ -336,6 +343,7 @@ static void check_altitude_lock(uint16_t *state, float altitude) {
   for (int y = 0; y < ALTITUDE_WINDOW_SIZE; y++) {
     sum += altitude_window[y];
   }
+
   float average = sum / ALTITUDE_WINDOW_SIZE;
 
   if (average >= ALTITUDE_LOCK)
@@ -427,8 +435,6 @@ static void check_if_altitude_descending(uint16_t *state, float altitude) {
   }
 }
 
-#define PIN_LED_APOGEE 3
-
 static void check_parachute(uint16_t *state) {
   if (!(*state & 0b10000))
     return;
@@ -515,6 +521,15 @@ void run_sut(fcc_mode_t volatile *current_mode) {
 
       if (b == SUT_DATA_HEADER) // 0xAB
         break;
+
+      if (b == CMD_HEADER) { // 0xAA
+        uint8_t cmd_buf[CMD_PACKET_SIZE];
+        cmd_buf[0] = b;
+        int got = uart_read_bytes(RS232_UART_NUM, &cmd_buf[1],
+                                  CMD_PACKET_SIZE - 1, pdMS_TO_TICKS(100));
+        if (got == CMD_PACKET_SIZE - 1)
+          apply_command_packet(cmd_buf);
+      }
     }
 
     ESP_LOGW(TAG, "RX %02X", b);

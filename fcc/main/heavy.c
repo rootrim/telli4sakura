@@ -18,11 +18,11 @@
 static const char *TAG = "KGD";
 
 // TODO: Set actual pin numbers
-#define PIN_GPS_TX 11
-#define PIN_GPS_RX 10
-#define PIN_LORA_TX 8
-#define PIN_LORA_RX 9
-#define PIN_BUZZER 1
+#define PIN_GPS_TX 4
+#define PIN_GPS_RX 5
+#define PIN_LORA_TX 7
+#define PIN_LORA_RX 8
+#define PIN_LORA_M1 10
 
 #define GPS_UART UART_NUM_1
 #define LORA_UART UART_NUM_2
@@ -33,29 +33,34 @@ static const char *TAG = "KGD";
 
 volatile uint32_t buzzer_interval_ms = 1000; // 0 = kapalı
 
-void buzzer_task(void *arg) {
-  while (1) {
-    if (buzzer_interval_ms == 0) {
-      gpio_set_level(PIN_BUZZER, 0);
-      vTaskDelay(pdMS_TO_TICKS(100));
-      continue;
-    }
-
-    gpio_set_level(PIN_BUZZER, 1);
-    vTaskDelay(pdMS_TO_TICKS(100)); // Bip süresi
-
-    gpio_set_level(PIN_BUZZER, 0);
-    vTaskDelay(pdMS_TO_TICKS(buzzer_interval_ms));
-  }
-}
+// void buzzer_task(void *arg) {
+//   while (1) {
+//     if (buzzer_interval_ms == 0) {
+//       gpio_set_level(PIN_BUZZER, 0);
+//       vTaskDelay(pdMS_TO_TICKS(100));
+//       continue;
+//     }
+//
+//     gpio_set_level(PIN_BUZZER, 1);
+//     vTaskDelay(pdMS_TO_TICKS(100)); // Bip süresi
+//
+//     gpio_set_level(PIN_BUZZER, 0);
+//     vTaskDelay(pdMS_TO_TICKS(buzzer_interval_ms));
+//   }
+// }
 
 static void sensors_init(void) {
-  ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
-  ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, 9600));
+  ESP_ERROR_CHECK(
+      lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, PIN_LORA_M1, 9600));
+  ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
 }
 
 void main_quest(void) {
-  gpio_set_level(PIN_BUZZER, 1);
+  // gpio_set_level(PIN_BUZZER, 1);
+  gpio_reset_pin(PIN_LORA_M1);
+  gpio_set_direction(PIN_LORA_M1, GPIO_MODE_OUTPUT);
+  gpio_set_level(PIN_LORA_M1, 0);
+
   sensors_init();
 
   ESP_LOGI(TAG, "Initialized, starting main loop at 5Hz");

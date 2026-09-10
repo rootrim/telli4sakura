@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::{app::App, protocol::Packet};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
 };
+use std::f32::consts::PI;
 
 impl App {
     pub(crate) fn render(&mut self, frame: &mut Frame) {
@@ -80,7 +81,7 @@ impl App {
         if let Some(packet) = *packet {
             frame.render_widget(
                 Paragraph::new(format!(
-                    "alt:{:.2}m  press:{:.2}Pa ax:{:.3} ay:{:.3} az:{:.3}  gx:{:.3} gy:{:.3} gz:{:.3}  lat:{:.6} lon:{:.6}",
+                    "alt:{:.2}m press:{:.2}Pa ax:{:.3} ay:{:.3} az:{:.3} gx:{:.3} gy:{:.3} gz:{:.3} lat:{:.6} lon:{:.6} tilt:{:.2}",
                     packet.altitude,
                     packet.pressure,
                     packet.accel_x,
@@ -91,6 +92,7 @@ impl App {
                     packet.angle_z,
                     packet.gps_lat,
                     packet.gps_lon,
+                    calc_tilt(&packet),
                 )).block(telemetry_block) ,
                 layout[2],
             );
@@ -110,4 +112,42 @@ impl App {
             );
         }
     }
+}
+
+fn calc_tilt(packet: &Packet) -> f32 {
+    //float calc_tilt(float ax, float ay, float az) {
+    //   float magnitude = sqrtf(ax * ax + ay * ay + az * az);
+    //
+    //   if (magnitude < 1e-6f)
+    //     return 0.0f;
+    //
+    //   float c = az / magnitude;
+    //
+    //   // Sayısal hatalara karşı
+    //   if (c > 1.0f)
+    //     c = 1.0f;
+    //   if (c < -1.0f)
+    //     c = -1.0f;
+    //
+    //   return acosf(c) * 180.0f / (float)M_PI;
+    //}
+    let magnitude = (packet.accel_x * packet.accel_x
+        + packet.accel_y * packet.accel_y
+        + packet.accel_z * packet.accel_z)
+        .sqrt();
+
+    if magnitude < 1e-6f32 {
+        return 0.0f32;
+    }
+
+    let mut c: f32 = packet.accel_z / magnitude;
+
+    if c > 1.0f32 {
+        c = 1.0f32;
+    }
+    if c < -1.0f32 {
+        c = -1.0f32;
+    }
+
+    c.acos() * 180.0f32 / PI
 }

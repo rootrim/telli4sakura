@@ -4,7 +4,7 @@
 #include "minmea.h"
 
 #define GPS_BUF_SIZE (512)
-#define GPS_DATA_HZ (10)
+#define GPS_DATA_HZ (5)
 
 static const char *TAG = "gps_drv";
 static int s_uart_num;
@@ -108,9 +108,14 @@ esp_err_t gps_drv_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate) {
   if (ret != ESP_OK)
     return ret;
 
-  ret = uart_driver_install(uart_num, GPS_BUF_SIZE * 2, 0, 0, NULL, 0);
-  if (ret != ESP_OK)
-    return ret;
+  if (!uart_is_driver_installed(uart_num)) {
+    ret = uart_driver_install(uart_num, GPS_BUF_SIZE * 2, 0, 0, NULL, 0);
+    if (ret != ESP_OK)
+      return ret;
+  } else {
+    ESP_LOGW(TAG, "UART%d driver already installed, skipping install",
+             uart_num);
+  }
 
   esp_err_t rate_ret = gps_drv_set_rate(uart_num, GPS_DATA_HZ);
   if (rate_ret != ESP_OK) {

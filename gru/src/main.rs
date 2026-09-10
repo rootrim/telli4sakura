@@ -60,6 +60,7 @@ fn main() -> io::Result<()> {
                 Ok(pkt) => {
                     if only_gps(&pkt) {
                         *workload_packet_clone.lock().unwrap() = Some(pkt);
+                        eprintln!("WL-GPS: lat:{}, lon:{}", pkt.gps_lat, pkt.gps_lon);
                     } else {
                         let mut buf = buffer_clone.lock().unwrap();
                         buf.push(pkt.altitude);
@@ -67,6 +68,7 @@ fn main() -> io::Result<()> {
                             buf.remove(0);
                         }
                         *last_packet_clone.lock().unwrap() = Some(pkt);
+                        eprintln!("UKB-GPS: lat:{}, lon:{}", pkt.gps_lat, pkt.gps_lon);
                     }
                 }
                 Err(_e) => continue,

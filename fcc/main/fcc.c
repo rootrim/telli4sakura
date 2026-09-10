@@ -26,17 +26,17 @@ static volatile fcc_mode_t current_mode = FCC_MODE_DUR;
 #define PIN_I2C_SDA 2
 #define PIN_I2C_SCL 1
 
-#define PIN_GPS_TX 10
-#define PIN_GPS_RX 9
+#define PIN_GPS_TX 9
+#define PIN_GPS_RX 10
 
-#define PIN_LORA_TX 13
-#define PIN_LORA_RX 12
+#define PIN_LORA_TX 12
+#define PIN_LORA_RX 13
+#define PIN_LORA_M1 4
 
 #define PIN_LED_APOGEE 3
 #define PIN_HGG_APOGEE 8
 #define PIN_BUZZER 6
 
-// TODO: FIX OR ILL touch you
 #define PIN_RS232_TX 43
 #define PIN_RS232_RX 44
 
@@ -152,10 +152,6 @@ static void sensors_init(void) {
   ESP_ERROR_CHECK(i2cdev_init());
   ESP_LOGI(TAG, "i2cdev_init tamamlandi");
 
-  ESP_LOGI(TAG, "ms5611_drv_init basliyor");
-  ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
-  ESP_LOGI(TAG, "ms5611_drv_init tamamlandi");
-
   ESP_LOGI(TAG, "mpu6050_drv_init basliyor");
   ESP_ERROR_CHECK(mpu6050_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
   ESP_LOGI(TAG, "mpu6050_drv_init tamamlandi");
@@ -164,12 +160,17 @@ static void sensors_init(void) {
   ESP_ERROR_CHECK(bmp280_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
   ESP_LOGI(TAG, "bmp280_drv_init tamamlandi");
 
+  ESP_LOGI(TAG, "ms5611_drv_init basliyor");
+  ESP_ERROR_CHECK(ms5611_drv_init(PIN_I2C_SDA, PIN_I2C_SCL));
+  ESP_LOGI(TAG, "ms5611_drv_init tamamlandi");
+
   ESP_LOGI(TAG, "gps_drv_init basliyor");
   ESP_ERROR_CHECK(gps_drv_init(GPS_UART, PIN_GPS_TX, PIN_GPS_RX, GPS_BAUD));
   ESP_LOGI(TAG, "gps_drv_init tamamlandi");
 
   ESP_LOGI(TAG, "lora_init basliyor");
-  ESP_ERROR_CHECK(lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, 9600));
+  ESP_ERROR_CHECK(
+      lora_init(LORA_UART, PIN_LORA_TX, PIN_LORA_RX, PIN_LORA_M1, 9600));
   ESP_LOGI(TAG, "lora_init tamamlandi");
 }
 
@@ -194,6 +195,10 @@ void main_quest(void) {
   gpio_set_direction(PIN_HGG_APOGEE, GPIO_MODE_OUTPUT);
   gpio_set_level(PIN_HGG_APOGEE, 0);
 
+  gpio_reset_pin(PIN_LORA_M1);
+  gpio_set_direction(PIN_LORA_M1, GPIO_MODE_OUTPUT);
+  gpio_set_level(PIN_LORA_M1, 0);
+
   sensors_init();
   kalman_init_all();
 
@@ -201,8 +206,8 @@ void main_quest(void) {
 
   while (current_mode == FCC_MODE_DUR) {
     // deadbeef uart test
-    // uint8_t test_message[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    // uart_write_bytes(RS232_UART_NUM, test_message, sizeof(test_message));
+    uint8_t test_message[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    uart_write_bytes(RS232_UART_NUM, test_message, sizeof(test_message));
 
     TickType_t loop_start = xTaskGetTickCount();
 
@@ -274,9 +279,8 @@ void main_quest(void) {
           .gps_lat = lat,
           .gps_lon = lon,
       };
-
+      ESP_LOGI(TAG, "Lora packet send");
       lora_send(&pkt);
-      lora_dump_raw();
     }
 
   next:

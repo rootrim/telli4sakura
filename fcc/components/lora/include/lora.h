@@ -33,7 +33,8 @@ typedef struct {
  * @param[in] baud_rate Baud rate.
  * @return esp_err_t ESP_OK on success.
  */
-esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate);
+esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int m1_gpio,
+                    int baud_rate);
 
 /**
  * @brief Packs sensor data into 44-byte packet and sends over LoRa UART.
@@ -44,4 +45,4 @@ esp_err_t lora_init(int uart_num, int tx_gpio, int rx_gpio, int baud_rate);
 esp_err_t lora_send(const lora_packet_data_t *data);
 
 void lora_dump_raw(void);
-void lora_config(void);
+void lora_config(int m1_gpio);

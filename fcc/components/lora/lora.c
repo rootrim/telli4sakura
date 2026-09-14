@@ -67,9 +67,9 @@ esp_err_t lora_send(const lora_packet_data_t *data) {
   pack_float(&packet[9], data->accel_x);
   pack_float(&packet[13], data->accel_y);
   pack_float(&packet[17], data->accel_z);
-  pack_float(&packet[21], data->angle_x);
-  pack_float(&packet[25], data->angle_y);
-  pack_float(&packet[29], data->angle_z);
+  pack_float(&packet[21], data->gyro_x);
+  pack_float(&packet[25], data->gyro_y);
+  pack_float(&packet[29], data->gyro_z);
   pack_float(&packet[33], data->gps_lat);
   pack_float(&packet[37], data->gps_lon);
 
@@ -105,7 +105,7 @@ void lora_config(int m1_gpio) {
       0x06, // Length
       0x00, // ADDH
       0x1F, // ADDL
-      0x3E, // NETID
+      0x3F, // NETID
       0x63, // REG0
       0x00, // REG1
       0x45  // REG2

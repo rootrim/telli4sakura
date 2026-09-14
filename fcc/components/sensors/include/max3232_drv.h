@@ -37,9 +37,9 @@ typedef struct __attribute__((packed)) {
   float accel_x;
   float accel_y;
   float accel_z;
-  float angle_x;
-  float angle_y;
-  float angle_z;
+  float gyro_x;
+  float gyro_y;
+  float gyro_z;
   uint8_t checksum;
   uint8_t footer1;
   uint8_t footer2;

@@ -4,7 +4,7 @@
 #include "minmea.h"
 
 #define GPS_BUF_SIZE (512)
-#define GPS_DATA_HZ (5)
+#define GPS_DATA_HZ (10)
 
 static const char *TAG = "gps_drv";
 static int s_uart_num;

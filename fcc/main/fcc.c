@@ -10,8 +10,10 @@
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/ledc.h"
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/task.h"
 #include "i2cdev.h"
 #include "soc/gpio_num.h"
@@ -22,7 +24,6 @@ static const char *I2C_SCANNER_TAG = "i2c_scanner";
 
 static volatile fcc_mode_t current_mode = FCC_MODE_DUR;
 
-// TODO: Set actual pin numbers
 #define PIN_I2C_SDA 2
 #define PIN_I2C_SCL 1
 
@@ -48,14 +49,61 @@ static volatile fcc_mode_t current_mode = FCC_MODE_DUR;
 #define LORA_UART UART_NUM_2
 #define GPS_BAUD 38400
 
-// 5Hz = 200ms
-#define LOOP_PERIOD_MS 200
+#define LOOP_PERIOD_MS 10
 
-volatile uint32_t buzzer_interval_ms = 1000; // 0 = kapalı
+#define PRIO_MAIN_LOOP 10
+#define PRIO_CMD_CHECK 6
+#define PRIO_LORA 5
+#define PRIO_GPS 5
+#define PRIO_BUZZER 3
 
-// ============================================================
-// I2C SCANNER
-// ============================================================
+volatile uint32_t buzzer_interval_ms = 1000; // 0 = kapali
+
+float ax;
+float ay;
+float az;
+float gx;
+float gy;
+float gz;
+float altitude;
+float pressure;
+TiltState tilt = {0};
+float lat;
+float lon;
+
+void buzzer_init(void) {
+  ledc_timer_config_t timer = {
+      .speed_mode = LEDC_LOW_SPEED_MODE,
+      .timer_num = LEDC_TIMER_0,
+      .duty_resolution = LEDC_TIMER_10_BIT,
+      .freq_hz = 2000,
+      .clk_cfg = LEDC_AUTO_CLK,
+  };
+
+  ledc_timer_config(&timer);
+
+  ledc_channel_config_t channel = {
+      .gpio_num = PIN_BUZZER,
+      .speed_mode = LEDC_LOW_SPEED_MODE,
+      .channel = LEDC_CHANNEL_0,
+      .timer_sel = LEDC_TIMER_0,
+      .duty = 512,
+      .hpoint = 0,
+  };
+
+  ledc_channel_config(&channel);
+}
+
+void buzzer_on(uint32_t freq) {
+  ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, freq);
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+void buzzer_off(void) {
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
 
 static void i2c_scan(void) {
   ESP_LOGI(I2C_SCANNER_TAG, "========================================");
@@ -86,26 +134,18 @@ static void i2c_scan(void) {
   int found = 0;
 
   for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
-
     ret = i2c_master_probe(bus_handle, addr, 100);
 
     if (ret == ESP_OK) {
       ESP_LOGI(I2C_SCANNER_TAG, "FOUND: 0x%02X", addr);
-
       found++;
     }
   }
 
   ESP_LOGI(I2C_SCANNER_TAG, "========================================");
-  ESP_LOGI(I2C_SCANNER_TAG, "I2C scan tamamlandi. %d cihaz bulundu.", found);
+  ESP_LOGI(I2C_SCANNER_TAG, "I2C scan completed. Found %d device.", found);
   ESP_LOGI(I2C_SCANNER_TAG, "========================================");
 
-  /*
-   * Scanner'ın açtığı native I2C bus'u kapatıyoruz.
-   *
-   * Daha sonra sensors_init() içerisinde i2cdev_init()
-   * kendi I2C bus yönetimini yapacak.
-   */
   ret = i2c_del_master_bus(bus_handle);
 
   if (ret != ESP_OK) {
@@ -113,39 +153,56 @@ static void i2c_scan(void) {
   }
 }
 
-void buzzer_task(void *arg) {
-  while (1) {
-    if (buzzer_interval_ms == 0) {
-      gpio_set_level(PIN_BUZZER, 0);
+void buzzer_task(void *pvParameters) {
+  while (1) { // NOTE: change to heartbeat
+    uint32_t interval = buzzer_interval_ms;
+
+    if (interval == 0) {
+      buzzer_off();
       vTaskDelay(pdMS_TO_TICKS(100));
       continue;
     }
 
-    gpio_set_level(PIN_BUZZER, 1);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    buzzer_on(2000); // 2 kHz
+    vTaskDelay(pdMS_TO_TICKS(interval));
 
-    gpio_set_level(PIN_BUZZER, 0);
-    vTaskDelay(pdMS_TO_TICKS(buzzer_interval_ms));
+    buzzer_off();
+    vTaskDelay(pdMS_TO_TICKS(interval));
   }
 }
 
-// ============================================================
-// KALMAN
-// ============================================================
+void gps_task(void *pvParameters) {
+  TickType_t last_wake = xTaskGetTickCount();
 
-// Kalman instances — one per filtered value
+  while (1) {
+    gps_data_t gps;
+
+    esp_err_t r_gps = gps_drv_read(&gps);
+
+    if (r_gps == ESP_OK) {
+      lat = gps.latitude;
+      lon = gps.longitude;
+    }
+
+    vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(100));
+  }
+}
+
 static kalman_t k_pressure_ms;
 static kalman_t k_pressure_bmp;
+
 static kalman_t k_accel_x;
 static kalman_t k_accel_y;
 static kalman_t k_accel_z;
+
 static kalman_t k_gyro_x;
 static kalman_t k_gyro_y;
 static kalman_t k_gyro_z;
 
-// ============================================================
-// SENSOR INITIALIZATION
-// ============================================================
+static bool pressure_kalman_initialized = false;
+
+static float ground_pressure = 0.0f;
+static bool ground_pressure_set = false;
 
 static void sensors_init(void) {
   ESP_LOGI(TAG, "i2cdev_init basliyor");
@@ -175,8 +232,6 @@ static void sensors_init(void) {
 }
 
 static void kalman_init_all(void) {
-  kalman_init(&k_pressure_ms, 0.05f, 1.44f, 101325.0f);
-  kalman_init(&k_pressure_bmp, 0.05f, 0.0004f, 101325.0f);
   kalman_init(&k_accel_x, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_y, 0.05f, 0.0000769f, 0.0f);
   kalman_init(&k_accel_z, 0.05f, 0.0000769f, 9.81f);
@@ -186,7 +241,6 @@ static void kalman_init_all(void) {
 }
 
 void main_quest(void) {
-
   gpio_reset_pin(PIN_LED_APOGEE);
   gpio_set_direction(PIN_LED_APOGEE, GPIO_MODE_OUTPUT);
   gpio_set_level(PIN_LED_APOGEE, 0);
@@ -202,11 +256,16 @@ void main_quest(void) {
   sensors_init();
   kalman_init_all();
 
-  ESP_LOGI(TAG, "FCC initialized, starting main loop at 5Hz");
+  pressure_kalman_initialized = false;
+  ground_pressure_set = false;
+
+  ESP_LOGI(TAG, "FCC initialized, starting main loop at 20Hz");
+
+  uint64_t last_tilt_time = esp_timer_get_time();
 
   while (current_mode == FCC_MODE_DUR) {
-    // deadbeef uart test
     uint8_t test_message[] = {0xDE, 0xAD, 0xBE, 0xEF};
+
     uart_write_bytes(RS232_UART_NUM, test_message, sizeof(test_message));
 
     TickType_t loop_start = xTaskGetTickCount();
@@ -220,71 +279,92 @@ void main_quest(void) {
     mpu6050_acceleration_t accel;
     mpu6050_rotation_t gyro;
 
-    gps_data_t gps;
-
     esp_err_t r_ms = ms5611_drv_read(&ms5611_pressure, &ms5611_temp);
     esp_err_t r_bmp = bmp280_drv_read(&bmp280_pressure, &bmp280_temp);
     esp_err_t r_mpu = mpu6050_drv_read(&accel, &gyro);
-    esp_err_t r_gps = gps_drv_read(&gps);
 
     if (r_ms != ESP_OK || r_bmp != ESP_OK || r_mpu != ESP_OK) {
       ESP_LOGE(TAG, "Sensor read error");
       goto next;
     }
 
-    {
-      // int32_t ms5611_pressure = (int32_t)(SIT_FAKE_PRESSURE_BASE_PA +
-      // generate_pressure_noise());
-
-      float ax = kalman_update(&k_accel_x, accel.x);
-      float ay = kalman_update(&k_accel_y, accel.y);
-      float az = kalman_update(&k_accel_z, accel.z);
-      float gx = kalman_update(&k_gyro_x, gyro.x);
-      float gy = kalman_update(&k_gyro_y, gyro.y);
-      float gz = kalman_update(&k_gyro_z, gyro.z);
-      float pressure_ms = kalman_update(&k_pressure_ms, ms5611_pressure);
-      float pressure_bmp = kalman_update(&k_pressure_bmp, bmp280_pressure);
-      float tilt = calc_tilt(ax, ay, az);
-
-      // TODO: tune weights based on sensor accuracy tests
-      //
-      float pressure = weighted_average(pressure_ms, 0.5f, pressure_bmp, 0.5f);
-      float altitude = 44330.0f * (1.0f - powf(pressure / 101325.0f, 0.1903f));
-      float lat = (r_gps == ESP_OK) ? gps.latitude : 0.0f;
-      float lon = (r_gps == ESP_OK) ? gps.longitude : 0.0f;
-
+    if (!pressure_kalman_initialized) {
+      kalman_init(&k_pressure_ms, 0.05f, 100.0f, (float)ms5611_pressure);
+      kalman_init(&k_pressure_bmp, 0.05f, 100.0f, bmp280_pressure);
+      pressure_kalman_initialized = true;
       ESP_LOGI(TAG,
-               "alt=%.2f press=%.2f "
-               "ax=%.3f ay=%.3f az=%.3f "
-               "gx=%.3f gy=%.3f gz=%.3f "
-               "lat=%.6f lon=%.6f tilt=%.2f",
-               altitude, pressure, ax, ay, az, gx, gy, gz, lat, lon, tilt);
+               "Pressure Kalman initialized: "
+               "MS=%.2f | BMP=%.2f",
+               (float)ms5611_pressure, bmp280_pressure);
+    }
 
-      if (flight_state_update(altitude, tilt)) {
-        gpio_set_level(PIN_LED_APOGEE, 1);
-        gpio_set_level(PIN_HGG_APOGEE, 1);
-        ESP_LOGI(TAG, "APOGEE DETECTED");
-        // Apogee part
-      }
+    ax = kalman_update(&k_accel_x, accel.x);
+    ay = kalman_update(&k_accel_y, accel.y);
+    az = kalman_update(&k_accel_z, accel.z);
+    gx = kalman_update(&k_gyro_x, gyro.x);
+    gy = kalman_update(&k_gyro_y, gyro.y);
+    gz = kalman_update(&k_gyro_z, gyro.z);
 
-      lora_packet_data_t pkt = {
-          .altitude = altitude,
-          .pressure = pressure,
-          .accel_x = ax,
-          .accel_y = ay,
-          .accel_z = az,
-          .angle_x = gx,
-          .angle_y = gy,
-          .angle_z = gz,
-          .gps_lat = lat,
-          .gps_lon = lon,
-      };
-      ESP_LOGI(TAG, "Lora packet send");
-      lora_send(&pkt);
+    float pressure_ms = kalman_update(&k_pressure_ms, (float)ms5611_pressure);
+    float pressure_bmp = kalman_update(&k_pressure_bmp, bmp280_pressure);
+
+    pressure = weighted_average(pressure_ms, 0.4f, pressure_bmp, 0.6f);
+
+    if (!ground_pressure_set) {
+      ground_pressure = pressure;
+      ground_pressure_set = true;
+      ESP_LOGI(TAG, "Ground pressure reference set: %.2f", ground_pressure);
+    }
+
+    altitude = 44330.0f * (1.0f - powf(pressure / ground_pressure, 0.1903f));
+
+    uint64_t now = esp_timer_get_time();
+    float dt = (now - last_tilt_time) / 1e6f;
+    last_tilt_time = now;
+    tilt_update(&tilt, ax, ay, az, gx, gy, gz, dt);
+    float tilt_mag = sqrtf(tilt.pitch * tilt.pitch + tilt.roll * tilt.roll);
+    float tilt_deg = tilt_mag * 180.0f / (float)M_PI;
+    ESP_LOGI(TAG,
+             "alt=%.2f press=%.2f "
+             "ax=%.3f ay=%.3f az=%.3f "
+             "gx=%.3f gy=%.3f gz=%.3f "
+             "lat=%.6f lon=%.6f tilt=%.2f",
+             altitude, pressure, ax, ay, az, gx, gy, gz, lat, lon, tilt_deg);
+
+    if (flight_state_update(altitude, tilt_deg)) {
+      gpio_set_level(PIN_LED_APOGEE, 1);
+      gpio_set_level(PIN_HGG_APOGEE, 1);
+      ESP_LOGI(TAG, "APOGEE DETECTED");
+      // Apogee part
     }
 
   next:
     vTaskDelayUntil(&loop_start, pdMS_TO_TICKS(LOOP_PERIOD_MS));
+  }
+}
+
+void lora_send_task(void *pvParameters) {
+  TickType_t last_wake = xTaskGetTickCount();
+
+  while (1) {
+    lora_packet_data_t pkt = {
+        .altitude = altitude,
+        .pressure = pressure,
+        .accel_x = ax,
+        .accel_y = ay,
+        .accel_z = az,
+        .gyro_x = gx,
+        .gyro_y = gy,
+        .gyro_z = gz,
+        .gps_lat = lat,
+        .gps_lon = lon,
+    };
+
+    ESP_LOGI(TAG, "Lora packet send");
+
+    lora_send(&pkt);
+
+    vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(200));
   }
 }
 
@@ -298,17 +378,23 @@ void command_check_task(void *pvParameters) {
 }
 
 void app_main(void) {
+  vTaskPrioritySet(NULL, PRIO_MAIN_LOOP);
+
   i2c_scan();
 
   ESP_ERROR_CHECK(
       max3232_drv_init(RS232_UART_NUM, PIN_RS232_TX, PIN_RS232_RX, RS232_BAUD));
 
-  xTaskCreate(command_check_task, "cmd_task", 4096, NULL, 5, NULL);
+  xTaskCreate(command_check_task, "cmd_task", 4096, NULL, PRIO_CMD_CHECK, NULL);
+  xTaskCreate(lora_send_task, "lora_task", 4096, NULL, PRIO_LORA, NULL);
+  xTaskCreate(gps_task, "gps_task", 4096, NULL, PRIO_GPS, NULL);
 
-  // xTaskCreate(buzzer_task, "buzzer", 2048, NULL, 1, NULL);
+  buzzer_init();
+  buzzer_on(2000);
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  buzzer_off();
 
   for (;;) {
-
     switch (current_mode) {
     case FCC_MODE_SIT:
       run_sit(&current_mode);

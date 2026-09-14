@@ -1,5 +1,14 @@
 #pragma once
 
+#define ACCEL_SENS 16384.0f
+#define GYRO_SENS 131.0f
+#define DEG2RAD 0.0174533f
+
+typedef struct {
+  float pitch;
+  float roll;
+} TiltState;
+
 #include <esp_err.h>
 #include <mpu6050.h>
 
@@ -30,4 +39,5 @@ esp_err_t mpu6050_drv_read(mpu6050_acceleration_t *accel,
  * @return float tilt value
  *
  */
-float calc_tilt(float accel_x, float accel_y, float accel_z);
+void tilt_update(TiltState *state, float ax_g, float ay_g, float az_g,
+                 float gx_dps, float gy_dps, float gz_dps, float dt);

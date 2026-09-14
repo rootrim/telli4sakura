@@ -6,4 +6,5 @@ idf_component_register(
         filters
         flight_state
         lora
+        esp_driver_ledc
 )

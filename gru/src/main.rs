@@ -119,7 +119,7 @@ fn only_gps(pkt: &Packet) -> bool {
         && pkt.angle_y == SENTINEL
         && pkt.angle_z == SENTINEL
     {
-        true
+        false
     } else {
         false
     }

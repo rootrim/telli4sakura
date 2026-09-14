@@ -297,21 +297,13 @@ void main_quest(void) {
       //     );
 
       float ax = kalman_update(&k_accel_x, accel.x);
-
       float ay = kalman_update(&k_accel_y, accel.y);
-
       float az = kalman_update(&k_accel_z, accel.z);
-
       float gx = kalman_update(&k_gyro_x, gyro.x);
-
       float gy = kalman_update(&k_gyro_y, gyro.y);
-
       float gz = kalman_update(&k_gyro_z, gyro.z);
-
       float pressure_ms = kalman_update(&k_pressure_ms, ms5611_pressure);
-
       float pressure_bmp = kalman_update(&k_pressure_bmp, bmp280_pressure);
-
       float tilt = calc_tilt(ax, ay, az);
 
       // TODO: tune weights based on sensor accuracy tests
@@ -346,9 +338,9 @@ void main_quest(void) {
           .accel_x = ax,
           .accel_y = ay,
           .accel_z = az,
-          .angle_x = gx,
-          .angle_y = gy,
-          .angle_z = gz,
+          .gyro_x = gx,
+          .gyro_y = gy,
+          .gyro_z = gz,
           .gps_lat = lat,
           .gps_lon = lon,
       };

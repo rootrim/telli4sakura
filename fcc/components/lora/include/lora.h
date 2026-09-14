@@ -17,9 +17,9 @@ typedef struct {
   float accel_x;
   float accel_y;
   float accel_z;
-  float angle_x;
-  float angle_y;
-  float angle_z;
+  float gyro_x;
+  float gyro_y;
+  float gyro_z;
   float gps_lat;
   float gps_lon;
 } lora_packet_data_t;
